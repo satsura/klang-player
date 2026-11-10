@@ -43,6 +43,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if args.contains("--selftest") {
             Task { @MainActor in await Player.shared.selfTest() }
         }
+        // Debug: download + convert the first track of $KLANG_ALBUM, print progress, exit.
+        if args.contains("--prepare") {
+            Task { @MainActor in
+                let want = ProcessInfo.processInfo.environment["KLANG_ALBUM"] ?? ""
+                guard let a = try? await Emby.shared.albums().first(where: { $0.Name.contains(want) }),
+                      let t = try? await Emby.shared.tracks(album: a.Id).first else { exit(1) }
+                await Preparer.shared.setProgressHandler { _, phase in
+                    FileHandle.standardError.write(Data("\(Date().timeIntervalSince1970) \(phase)\n".utf8))
+                }
+                let p = try? await Preparer.shared.prepare(t)
+                print("done:", t.Name, t.sourceLabel, p.map { "\($0.source) \($0.mime)" } ?? "failed")
+                exit(0)
+            }
+        }
         if args.contains("--discover") {
             Task {
                 for r in await Discovery.renderers() {

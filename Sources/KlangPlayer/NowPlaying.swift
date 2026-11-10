@@ -25,7 +25,15 @@ struct NowPlayingView: View {
                     HStack(spacing: 5) {
                         if player.state == .preparing {
                             ProgressView().controlSize(.mini)
-                            Text("preparing…").font(.system(size: 10)).foregroundStyle(.secondary)
+                            Group {
+                                switch player.preparePhase {
+                                case .downloading(let f): Text("Downloading \(Int(f * 100))%")
+                                case .converting: Text("Converting to AAC…")
+                                case nil: Text("preparing…")
+                                }
+                            }
+                            .font(.system(size: 10).monospacedDigit())
+                            .foregroundStyle(.secondary)
                         } else if let t = player.current {
                             Badge(text: t.sourceLabel)
                             if let o = player.outputLabel {

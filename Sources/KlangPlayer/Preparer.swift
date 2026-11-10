@@ -1,5 +1,13 @@
 import Foundation
 
+/// Preparation phase, reported to the UI.
+enum PreparePhase: Equatable {
+    case downloading(Double)
+    case converting
+}
+
+typealias PrepareProgress = @Sendable (_ trackId: String, _ phase: PreparePhase) -> Void
+
 /// What the speaker should fetch for a track.
 struct Prepared {
     enum Source { case file(URL), remote(URL) }
@@ -14,6 +22,10 @@ actor Preparer {
 
     let dir: URL
     private var tasks: [String: Task<Prepared, Error>] = [:]
+    /// Set by the player; receives progress for every track being prepared.
+    var onProgress: PrepareProgress?
+
+    func setProgressHandler(_ h: @escaping PrepareProgress) { onProgress = h }
 
     init() {
         dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -24,7 +36,8 @@ actor Preparer {
     func prepare(_ t: Track) async throws -> Prepared {
         if let task = tasks[t.Id] { return try await task.value }
         let dir = self.dir
-        let task = Task { try await Preparer.make(t, dir: dir) }
+        let progress = onProgress
+        let task = Task { try await Preparer.make(t, dir: dir) { progress?(t.Id, $0) } }
         tasks[t.Id] = task
         do {
             return try await task.value
@@ -34,12 +47,12 @@ actor Preparer {
         }
     }
 
-    private static func make(_ t: Track, dir: URL) async throws -> Prepared {
+    private static func make(_ t: Track, dir: URL, progress: @escaping @Sendable (PreparePhase) -> Void) async throws -> Prepared {
         let fm = FileManager.default
 
         if t.codec == "mp3" {
             let out = dir.appendingPathComponent("\(t.Id).mp3")
-            if !fm.fileExists(atPath: out.path) { try await download(Emby.shared.originalURL(t), to: out) }
+            if !fm.fileExists(atPath: out.path) { try await download(Emby.shared.originalURL(t), to: out, progress: progress) }
             touch(out)
             return Prepared(source: .file(out), mime: "audio/mpeg")
         }
@@ -56,7 +69,8 @@ actor Preparer {
             try? fm.removeItem(at: src)
             try? fm.removeItem(at: part)
         }
-        try await download(Emby.shared.originalURL(t), to: src)
+        try await download(Emby.shared.originalURL(t), to: src, progress: progress)
+        progress(.converting)
 
         var format = "aac"
         if let sr = t.sampleRate, sr > 48_000 {
@@ -75,8 +89,9 @@ actor Preparer {
         return Prepared(source: .remote(Emby.shared.mp3URL(t)), mime: "audio/mpeg")
     }
 
-    private static func download(_ url: URL, to dest: URL) async throws {
-        let (tmp, resp) = try await URLSession.shared.download(from: url)
+    private static func download(_ url: URL, to dest: URL, progress: @escaping @Sendable (PreparePhase) -> Void) async throws {
+        progress(.downloading(0))
+        let (tmp, resp) = try await URLSession.shared.download(from: url, delegate: DownloadProgress { progress(.downloading($0)) })
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard code == 200 else {
             try? FileManager.default.removeItem(at: tmp)
@@ -119,6 +134,23 @@ actor Preparer {
         for i in items.sorted(by: { $0.date < $1.date }) where total > Config.cacheLimitBytes {
             try? fm.removeItem(at: i.url)
             total -= i.size
+        }
+    }
+}
+
+/// Reports download progress of the task it's attached to.
+private final class DownloadProgress: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let report: @Sendable (Double) -> Void
+    private var observation: NSKeyValueObservation?
+    private var last = -1.0
+
+    init(_ report: @escaping @Sendable (Double) -> Void) { self.report = report }
+
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        observation = task.progress.observe(\.fractionCompleted) { [weak self] p, _ in
+            guard let self else { return }
+            let v = (p.fractionCompleted * 100).rounded() / 100
+            if v != self.last { self.last = v; self.report(v) }
         }
     }
 }

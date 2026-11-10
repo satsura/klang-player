@@ -48,6 +48,8 @@
 /* Now playing */
 "Nothing playing" = "Ничего не играет";
 "preparing…" = "готовлю…";
+"Downloading %lld%%" = "Скачиваю %lld%%";
+"Converting to AAC…" = "Кодирую в AAC…";
 "Floating card" = "Карточка поверх окон";
 "Queue" = "Очередь";
 "Queue is empty" = "Очередь пуста";

@@ -17,6 +17,8 @@ final class Player: ObservableObject {
     @Published var status: String?
     /// "AAC 320" / "MP3 320" — what actually goes to the speaker.
     @Published private(set) var outputLabel: String?
+    /// Progress of preparing the current track (download / conversion).
+    @Published private(set) var preparePhase: PreparePhase?
 
     var current: Track? { queue.indices.contains(index) ? queue[index] : nil }
     var upcoming: ArraySlice<Track> { index + 1 < queue.count ? queue[(index + 1)...] : [] }
@@ -36,6 +38,14 @@ final class Player: ObservableObject {
 
     private init() {
         FileServer.shared.start()
+        Task {
+            await Preparer.shared.setProgressHandler { id, phase in
+                Task { @MainActor in
+                    let p = Player.shared
+                    if p.current?.Id == id, p.state == .preparing { p.preparePhase = phase }
+                }
+            }
+        }
         Task { await Preparer.shared.trimCache() }
         Task { await refreshVolume() }
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -176,6 +186,7 @@ final class Player: ObservableObject {
         let gen = generation
         index = i
         state = .preparing
+        preparePhase = nil
         position = 0
         lastPosition = 0
         stoppedPolls = 0
@@ -190,6 +201,7 @@ final class Player: ObservableObject {
             try await Speaker.shared.play()
             guard gen == generation else { return }
             state = .playing
+            preparePhase = nil
             outputLabel = label(mime)
             keepAwake(true)
             await queueNext(gen)
