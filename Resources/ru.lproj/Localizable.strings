@@ -105,3 +105,13 @@
 /* Widget */
 "App is not running" = "Приложение не запущено";
 "What's playing on the speaker" = "Что играет на колонке";
+
+/* Card */
+"Card Style" = "Вид карточки";
+"Card Size" = "Размер карточки";
+"Cover with Controls" = "Обложка с кнопками";
+"Cover Only" = "Только обложка";
+"Strip" = "Полоска";
+"Small" = "Маленький";
+"Medium" = "Средний";
+"Large" = "Большой";

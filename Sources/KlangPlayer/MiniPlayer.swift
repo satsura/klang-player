@@ -1,10 +1,50 @@
 import AppKit
 import SwiftUI
 
-/// Floating cover card above all windows. A non-activating panel: it never takes focus or keyboard input.
+enum CardStyle: String, CaseIterable {
+    case cover      // cover with title and buttons
+    case art        // cover only; title and buttons on hover
+    case strip      // small horizontal bar
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .cover: "Cover with Controls"
+        case .art: "Cover Only"
+        case .strip: "Strip"
+        }
+    }
+}
+
+enum CardSize: String, CaseIterable {
+    case small, medium, large
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .small: "Small"
+        case .medium: "Medium"
+        case .large: "Large"
+        }
+    }
+
+    fileprivate func frame(for style: CardStyle) -> NSSize {
+        switch (style, self) {
+        case (.strip, .small): NSSize(width: 260, height: 60)
+        case (.strip, .medium): NSSize(width: 340, height: 76)
+        case (.strip, .large): NSSize(width: 440, height: 96)
+        case (_, .small): NSSize(width: 200, height: 200)
+        case (_, .medium): NSSize(width: 300, height: 300)
+        case (_, .large): NSSize(width: 440, height: 440)
+        }
+    }
+}
+
+/// Floating card above all windows. A non-activating panel: it never takes focus or keyboard input.
 @MainActor
-final class MiniPlayer {
+final class MiniPlayer: ObservableObject {
     static let shared = MiniPlayer()
+
+    @Published private(set) var style = CardStyle(rawValue: UserDefaults.standard.string(forKey: "cardStyle") ?? "") ?? .cover
+    @Published private(set) var size = CardSize(rawValue: UserDefaults.standard.string(forKey: "cardSize") ?? "") ?? .medium
 
     private var panel: NSPanel?
     private var scrollMonitor: Any?
@@ -28,8 +68,43 @@ final class MiniPlayer {
         if UserDefaults.standard.bool(forKey: "miniPlayerOpen") { show() }
     }
 
+    func setStyle(_ s: CardStyle) {
+        style = s
+        UserDefaults.standard.set(s.rawValue, forKey: "cardStyle")
+        applyLayout(resize: true)
+    }
+
+    func setSize(_ z: CardSize) {
+        size = z
+        UserDefaults.standard.set(z.rawValue, forKey: "cardSize")
+        applyLayout(resize: true)
+    }
+
+    /// Resize limits for the style; with `resize` also snaps to the preset size, keeping the top-left corner.
+    private func applyLayout(resize: Bool) {
+        guard let p = panel else { return }
+        let target = size.frame(for: style)
+        if style == .strip {
+            // Setting resize increments clears the square aspect ratio. Height is fixed per size.
+            p.contentResizeIncrements = NSSize(width: 1, height: 1)
+            p.contentMinSize = NSSize(width: 220, height: target.height)
+            p.contentMaxSize = NSSize(width: 720, height: target.height)
+        } else {
+            p.contentAspectRatio = NSSize(width: 1, height: 1)
+            p.contentMinSize = NSSize(width: 160, height: 160)
+            p.contentMaxSize = NSSize(width: 720, height: 720)
+        }
+        let cur = p.frame
+        let wrongShape = style == .strip ? cur.height != target.height : abs(cur.width - cur.height) > 1
+        guard resize || wrongShape else { return }
+        let f = NSRect(x: cur.minX, y: cur.maxY - target.height, width: target.width, height: target.height)
+        p.setFrame(f, display: true, animate: false)
+        (p.contentView as? NSHostingView<MiniPlayerView>)?.layer?.cornerRadius = style == .strip ? 12 : 16
+    }
+
     private func makePanel() -> NSPanel {
-        let p = CardPanel(contentRect: NSRect(x: 0, y: 0, width: 280, height: 280),
+        let start = size.frame(for: style)
+        let p = CardPanel(contentRect: NSRect(origin: .zero, size: start),
                           styleMask: [.borderless, .nonactivatingPanel, .resizable],
                           backing: .buffered, defer: false)
         p.level = .floating
@@ -39,18 +114,17 @@ final class MiniPlayer {
         p.hasShadow = true
         p.hidesOnDeactivate = false
         p.isReleasedWhenClosed = false
-        p.contentAspectRatio = NSSize(width: 1, height: 1)
-        p.contentMinSize = NSSize(width: 180, height: 180)
-        p.contentMaxSize = NSSize(width: 640, height: 640)
         let host = NSHostingView(rootView: MiniPlayerView { [weak self] in self?.hide() })
         host.wantsLayer = true
-        host.layer?.cornerRadius = 16
+        host.layer?.cornerRadius = style == .strip ? 12 : 16
         host.layer?.masksToBounds = true
         p.contentView = host
         if !p.setFrameUsingName("KlangMiniPlayer"), let s = NSScreen.main?.visibleFrame {
-            p.setFrameOrigin(NSPoint(x: s.maxX - 300, y: s.maxY - 300))
+            p.setFrameOrigin(NSPoint(x: s.maxX - start.width - 20, y: s.maxY - start.height - 20))
         }
         p.setFrameAutosaveName("KlangMiniPlayer")
+        panel = p
+        applyLayout(resize: false)
         // Scroll over the card = speaker volume. The panel never becomes key, but scroll
         // events still go to the window under the cursor, so a local monitor sees them.
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self, weak p] e in
@@ -75,133 +149,226 @@ private final class CardPanel: NSPanel {
 
 struct MiniPlayerView: View {
     @ObservedObject var player = Player.shared
+    @ObservedObject var card = MiniPlayer.shared
     let close: () -> Void
     @State private var hover = false
     @State private var dragging = false
     @State private var showVolume = false
     @State private var volumeHide: Task<Void, Never>?
 
-    private var art: URL? {
-        Emby.shared.imageURL(itemId: player.current?.AlbumId, tag: player.current?.AlbumPrimaryImageTag, size: 800)
-    }
+    private var art: URL? { player.current?.artURL(size: 800) }
 
     var body: some View {
         GeometryReader { geo in
-            let s = geo.size.width
-            ZStack(alignment: .bottom) {
-                AsyncImage(url: art) { phase in
-                    if let img = phase.image {
-                        img.resizable().aspectRatio(contentMode: .fill)
-                    } else {
-                        ZStack {
-                            LinearGradient(colors: [Color(white: 0.25), Color(white: 0.12)], startPoint: .top, endPoint: .bottom)
-                            Image(systemName: "hifispeaker").font(.system(size: s * 0.25)).foregroundStyle(.white.opacity(0.3))
-                        }
-                    }
-                }
-                .frame(width: s, height: s)
-                .clipped()
-                .gesture(DragGesture(minimumDistance: 2).onChanged { _ in
-                    // Move the panel by dragging the cover.
-                    if !dragging, let e = NSApp.currentEvent, let w = e.window {
-                        dragging = true
-                        w.performDrag(with: e)
-                    }
-                }.onEnded { _ in dragging = false })
-
-                LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
-                    .frame(height: s * 0.5)
-                    .allowsHitTesting(false)
-
-                VStack(alignment: .leading, spacing: s * 0.025) {
-                    Text(player.current?.Name ?? String(localized: "Nothing playing"))
-                        .font(.system(size: max(12, s * 0.055), weight: .semibold))
-                        .lineLimit(1)
-                    Text(player.current?.artist ?? " ")
-                        .font(.system(size: max(10, s * 0.042)))
-                        .foregroundStyle(.white.opacity(0.75))
-                        .lineLimit(1)
-                    ProgressLine(value: player.duration > 0 ? player.position / player.duration : 0)
-                        .frame(height: 3)
-                        .padding(.top, 2)
-                    HStack(spacing: s * 0.08) {
-                        Spacer()
-                        Button { player.previous() } label: { Image(systemName: "backward.fill") }
-                        Button { player.toggle() } label: {
-                            Image(systemName: player.state == .playing ? "pause.fill" : "play.fill")
-                                .font(.system(size: max(16, s * 0.085)))
-                                .frame(width: max(20, s * 0.1))
-                        }
-                        Button { player.next() } label: { Image(systemName: "forward.fill") }
-                            .disabled(player.upcoming.isEmpty)
-                        Spacer()
-                    }
-                    .font(.system(size: max(12, s * 0.055)))
-                    .buttonStyle(.plain)
-                    .disabled(player.current == nil)
-                }
-                .foregroundStyle(.white)
-                .padding(s * 0.05)
-                .shadow(color: .black.opacity(0.5), radius: 3)
-            }
-            .overlay(alignment: .top) {
-                VStack(spacing: 6) {
-                    if hover, let n = player.upcoming.first {
-                        HStack(spacing: 4) {
-                            Text("Next:").opacity(0.7)
-                            Text(verbatim: "\(n.Name) — \(n.artist)").lineLimit(1)
-                        }
-                        .font(.system(size: max(10, s * 0.038)))
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(.black.opacity(0.45), in: Capsule())
-                        .padding(.horizontal, 34)
-                    }
-                    if showVolume {
-                        HStack(spacing: 6) {
-                            Image(systemName: player.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            ProgressLine(value: player.maxVolume > 0 ? player.volume / player.maxVolume : 0)
-                                .frame(width: s * 0.3, height: 4)
-                            Text("\(Int(player.volume))").monospacedDigit()
-                        }
-                        .font(.system(size: max(10, s * 0.04)))
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(.black.opacity(0.55), in: Capsule())
-                        .transition(.opacity)
-                    }
-                }
-                .foregroundStyle(.white)
-                .padding(.top, 10)
-                .allowsHitTesting(false)
-            }
-            .onChange(of: player.volume) {
-                withAnimation(.easeOut(duration: 0.15)) { showVolume = true }
-                volumeHide?.cancel()
-                volumeHide = Task {
-                    try? await Task.sleep(nanoseconds: 1_300_000_000)
-                    guard !Task.isCancelled else { return }
-                    withAnimation(.easeIn(duration: 0.3)) { showVolume = false }
+            Group {
+                if card.style == .strip {
+                    strip(geo.size)
+                } else {
+                    square(geo.size.width, minimal: card.style == .art)
                 }
             }
             .overlay(alignment: .topLeading) {
                 if hover {
                     Button(action: close) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 16))
+                            .font(.system(size: card.style == .strip ? 13 : 16))
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(.white, .black.opacity(0.5))
                     }
                     .buttonStyle(.plain)
-                    .padding(8)
+                    .padding(card.style == .strip ? 4 : 8)
                 }
             }
         }
-        .onHover { hover = $0 }
+        .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hover = h } }
+        .onChange(of: player.volume) {
+            withAnimation(.easeOut(duration: 0.15)) { showVolume = true }
+            volumeHide?.cancel()
+            volumeHide = Task {
+                try? await Task.sleep(nanoseconds: 1_300_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeIn(duration: 0.3)) { showVolume = false }
+            }
+        }
         .contextMenu {
             Button(player.state == .playing ? LocalizedStringKey("Pause") : LocalizedStringKey("Play")) { player.toggle() }
             Button("Next") { player.next() }
             Divider()
+            Picker("Card Style", selection: Binding(get: { card.style }, set: { card.setStyle($0) })) {
+                ForEach(CardStyle.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            Picker("Card Size", selection: Binding(get: { card.size }, set: { card.setSize($0) })) {
+                ForEach(CardSize.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            Divider()
             Button("Close Card", action: close)
         }
+    }
+
+    // MARK: Square card (cover with controls / cover only)
+
+    private func square(_ s: CGFloat, minimal: Bool) -> some View {
+        let showInfo = !minimal || hover
+        return ZStack(alignment: .bottom) {
+            artwork(iconSize: s * 0.25)
+                .frame(width: s, height: s)
+                .clipped()
+                .gesture(dragGesture)
+
+            if showInfo {
+                LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: s * 0.5)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+
+                VStack(alignment: .leading, spacing: s * 0.025) {
+                    Marquee(text: player.current?.Name ?? String(localized: "Nothing playing"),
+                            font: .system(size: max(12, s * 0.055), weight: .semibold))
+                    Marquee(text: player.current?.artist ?? " ", font: .system(size: max(10, s * 0.042)))
+                        .foregroundStyle(.white.opacity(0.75))
+                    ProgressLine(value: progress)
+                        .frame(height: 3)
+                        .padding(.top, 2)
+                    HStack(spacing: s * 0.08) {
+                        Spacer()
+                        controls(play: max(16, s * 0.085))
+                        Spacer()
+                    }
+                    .font(.system(size: max(12, s * 0.055)))
+                }
+                .foregroundStyle(.white)
+                .padding(s * 0.05)
+                .shadow(color: .black.opacity(0.5), radius: 3)
+                .transition(.opacity)
+            } else {
+                // Cover only: a thin progress line at the bottom edge.
+                ProgressLine(value: progress)
+                    .frame(height: 3)
+                    .shadow(color: .black.opacity(0.6), radius: 2)
+                    .padding(.horizontal, s * 0.06)
+                    .padding(.bottom, s * 0.045)
+                    .allowsHitTesting(false)
+            }
+        }
+        .overlay(alignment: .top) {
+            VStack(spacing: 6) {
+                if hover && !minimal, let n = player.upcoming.first {
+                    HStack(spacing: 4) {
+                        Text("Next:").opacity(0.7)
+                        Text(verbatim: "\(n.Name) — \(n.artist)").lineLimit(1)
+                    }
+                    .font(.system(size: max(10, s * 0.038)))
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(.black.opacity(0.45), in: Capsule())
+                    .padding(.horizontal, 34)
+                }
+                if showVolume { volumeBadge(width: s * 0.3, font: max(10, s * 0.04)) }
+            }
+            .foregroundStyle(.white)
+            .padding(.top, 10)
+            .allowsHitTesting(false)
+        }
+    }
+
+    // MARK: Strip
+
+    private func strip(_ size: CGSize) -> some View {
+        let h = size.height
+        return HStack(spacing: h * 0.16) {
+            artwork(iconSize: h * 0.35)
+                .frame(width: h, height: h)
+                .clipped()
+            VStack(alignment: .leading, spacing: h * 0.04) {
+                if showVolume {
+                    volumeBadge(width: max(60, size.width * 0.25), font: max(10, h * 0.16))
+                } else {
+                    Marquee(text: player.current?.Name ?? String(localized: "Nothing playing"),
+                            font: .system(size: max(11, h * 0.19), weight: .semibold))
+                    Marquee(text: player.current?.artist ?? " ", font: .system(size: max(10, h * 0.155)))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                ProgressLine(value: progress)
+                    .frame(height: 3)
+                    .padding(.top, h * 0.04)
+            }
+            HStack(spacing: h * 0.18) {
+                controls(play: max(14, h * 0.26))
+            }
+            .font(.system(size: max(11, h * 0.18)))
+            .padding(.trailing, h * 0.2)
+        }
+        .foregroundStyle(.white)
+        .frame(width: size.width, height: h)
+        .background {
+            ZStack {
+                Color(white: 0.12)
+                AsyncImage(url: art) { $0.image?.resizable().aspectRatio(contentMode: .fill) }
+                    .id(art)
+                    .blur(radius: 24)
+                    .opacity(0.6)
+                Color.black.opacity(0.35)
+            }
+        }
+        .clipped()
+        .contentShape(Rectangle())
+        .gesture(dragGesture)
+    }
+
+    // MARK: Pieces
+
+    private var progress: Double { player.duration > 0 ? player.position / player.duration : 0 }
+
+    private func artwork(iconSize: CGFloat) -> some View {
+        AsyncImage(url: art) { phase in
+            if let img = phase.image {
+                img.resizable().aspectRatio(contentMode: .fill)
+            } else {
+                ZStack {
+                    LinearGradient(colors: [Color(white: 0.25), Color(white: 0.12)], startPoint: .top, endPoint: .bottom)
+                    Image(systemName: "hifispeaker").font(.system(size: iconSize)).foregroundStyle(.white.opacity(0.3))
+                }
+            }
+        }
+        .id(art)
+    }
+
+    /// Move the panel by dragging the card.
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 2).onChanged { _ in
+            if !dragging, let e = NSApp.currentEvent, let w = e.window {
+                dragging = true
+                w.performDrag(with: e)
+            }
+        }.onEnded { _ in dragging = false }
+    }
+
+    @ViewBuilder
+    private func controls(play: CGFloat) -> some View {
+        Group {
+            Button { player.previous() } label: { Image(systemName: "backward.fill") }
+            Button { player.toggle() } label: {
+                Image(systemName: player.state == .playing ? "pause.fill" : "play.fill")
+                    .font(.system(size: play))
+                    .frame(width: play * 1.15)
+            }
+            Button { player.next() } label: { Image(systemName: "forward.fill") }
+                .disabled(player.upcoming.isEmpty)
+        }
+        .buttonStyle(.plain)
+        .disabled(player.current == nil)
+    }
+
+    private func volumeBadge(width: CGFloat, font: CGFloat) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: player.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+            ProgressLine(value: player.maxVolume > 0 ? player.volume / player.maxVolume : 0)
+                .frame(width: width, height: 4)
+            Text("\(Int(player.volume))").monospacedDigit()
+        }
+        .font(.system(size: font))
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(.black.opacity(0.55), in: Capsule())
+        .transition(.opacity)
     }
 }
 

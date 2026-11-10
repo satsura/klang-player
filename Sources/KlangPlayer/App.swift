@@ -38,6 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = CommandLine.arguments
+        // SwiftUI may open the Settings scene on launch (e.g. when started from a terminal); it's only for ⌘,.
+        DispatchQueue.main.async {
+            for w in NSApp.windows where w.identifier?.rawValue.contains("Settings") == true { w.close() }
+        }
         if args.contains("--dark") { NSApp.appearance = NSAppearance(named: .darkAqua) }
         if !args.contains("--discover") && !args.contains("--relocate") {
             Task { @MainActor in
@@ -118,7 +122,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Speaker.dryRun = true
             Task { @MainActor in
                 await Library.shared.load()
-                if let a = Library.shared.albums.first(where: { $0.imageTag != nil }),
+                let want = ProcessInfo.processInfo.environment["KLANG_ALBUM"] ?? ""
+                if let a = Library.shared.albums.first(where: { want.isEmpty ? $0.imageTag != nil : $0.Name.contains(want) }),
                    let t = try? await Library.shared.tracks(for: a) {
                     Player.shared.preview(Array(t.prefix(6)))
                 }

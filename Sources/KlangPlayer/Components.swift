@@ -20,8 +20,65 @@ struct Cover: View {
                 }
             }
         }
+        .id(url)
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: radius ?? max(4, size * 0.08), style: .continuous))
+    }
+}
+
+/// One line of text that scrolls like a ticker when it doesn't fit.
+struct Marquee: View {
+    let text: String
+    var font: Font = .body
+    var active = true
+    var speed: Double = 28          // points per second
+    private let gap: CGFloat = 36
+    private let pause = 2.5         // seconds at the start of each loop
+
+    @State private var textWidth: CGFloat = 0
+    @State private var boxWidth: CGFloat = 0
+    @State private var start = Date()
+
+    private var overflow: Bool { textWidth > boxWidth + 1 && boxWidth > 0 }
+
+    var body: some View {
+        Text(verbatim: text)
+            .font(font)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(overflow ? 0 : 1)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { boxWidth = $0 }
+            .background(alignment: .leading) {
+                Text(verbatim: text).font(font).lineLimit(1).fixedSize().hidden()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { textWidth = $0 }
+            }
+            .overlay(alignment: .leading) {
+                if overflow {
+                    TimelineView(.animation(minimumInterval: 1 / 30, paused: !active)) { ctx in
+                        let run = Double(textWidth + gap) / speed
+                        let t = ctx.date.timeIntervalSince(start).truncatingRemainder(dividingBy: run + pause)
+                        HStack(spacing: gap) {
+                            Text(verbatim: text)
+                            Text(verbatim: text)
+                        }
+                        .font(font)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .offset(x: t < pause ? 0 : -CGFloat((t - pause) * speed))
+                    }
+                }
+            }
+            .clipped()
+            .mask {
+                if overflow {
+                    LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.04),
+                                           .init(color: .black, location: 0.92), .init(color: .clear, location: 1)],
+                                   startPoint: .leading, endPoint: .trailing)
+                } else {
+                    Rectangle()
+                }
+            }
+            .onChange(of: text) { start = Date() }
     }
 }
 
@@ -128,7 +185,7 @@ struct TrackRow: View {
         HStack(spacing: 10) {
             ZStack {
                 if showCover {
-                    Cover(url: Emby.shared.imageURL(itemId: track.AlbumId, tag: track.AlbumPrimaryImageTag, size: 80), size: 30)
+                    Cover(url: track.artURL(size: 80), size: 30)
                         .opacity(hover ? 0.35 : 1)
                 }
                 if hover {

@@ -65,11 +65,17 @@ struct Track: Identifiable, Hashable, Codable {
     let IndexNumber: Int?
     let ParentIndexNumber: Int?
     let AlbumPrimaryImageTag: String?
+    var ImageTags: [String: String]? = nil       // the track's own (embedded) cover
     let MediaSources: [MediaSource]?
     var UserData: UserItemData? = nil
 
     var id: String { Id }
     var isFavorite: Bool { UserData?.IsFavorite ?? false }
+    /// Album cover, or the track's own cover when the album has none in Emby.
+    func artURL(size: Int) -> URL? {
+        if let tag = AlbumPrimaryImageTag { return Emby.shared.imageURL(itemId: AlbumId, tag: tag, size: size) }
+        return Emby.shared.imageURL(itemId: Id, tag: ImageTags?["Primary"], size: size)
+    }
     var duration: Double { Double(RunTimeTicks ?? 0) / 10_000_000 }
     var artist: String { Artists?.first ?? AlbumArtist ?? "" }
     private var audioStream: MediaStream? {

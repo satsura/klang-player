@@ -70,8 +70,14 @@ struct StatusBarView: View {
 
     private var title: String? {
         guard showTrack, let t = player.current else { return nil }
-        let s = [t.artist, t.Name].filter { !$0.isEmpty }.joined(separator: " — ")
-        return s.count > 38 ? String(s.prefix(37)) + "…" : s
+        return [t.artist, t.Name].filter { !$0.isEmpty }.joined(separator: " — ")
+    }
+
+    /// Longer titles scroll inside this width.
+    private static let maxTitleWidth: CGFloat = 240
+    private func width(of s: String) -> CGFloat {
+        let w = (s as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width
+        return min(ceil(w) + 1, Self.maxTitleWidth)
     }
 
     var body: some View {
@@ -80,11 +86,9 @@ struct StatusBarView: View {
                 Image(systemName: player.state == .playing ? "hifispeaker.fill" : "hifispeaker")
                     .font(.system(size: 13))
                 if let title {
-                    Text(title)
-                        .font(.system(size: 12))
+                    Marquee(text: title, font: .system(size: 12), active: player.state == .playing)
+                        .frame(width: width(of: title))
                         .opacity(player.state == .playing ? 1 : 0.6)
-                        .lineLimit(1)
-                        .fixedSize()
                 }
             }
             .padding(.horizontal, 6)

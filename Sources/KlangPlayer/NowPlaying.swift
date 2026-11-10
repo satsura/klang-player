@@ -6,7 +6,7 @@ struct NowPlayingView: View {
     @State private var scrub: Double?
 
     private var art: URL? {
-        Emby.shared.imageURL(itemId: player.current?.AlbumId, tag: player.current?.AlbumPrimaryImageTag, size: 300)
+        player.current?.artURL(size: 300)
     }
 
     var body: some View {
@@ -15,13 +15,10 @@ struct NowPlayingView: View {
                 Cover(url: art, size: 76, radius: 8, placeholder: "hifispeaker")
                     .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(player.current?.Name ?? String(localized: "Nothing playing"))
-                        .font(.system(size: 14, weight: .semibold))
-                        .lineLimit(2)
-                    Text(subtitle)
-                        .font(.system(size: 12))
+                    Marquee(text: player.current?.Name ?? String(localized: "Nothing playing"),
+                            font: .system(size: 14, weight: .semibold))
+                    Marquee(text: subtitle, font: .system(size: 12))
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
                     HStack(spacing: 5) {
                         if player.state == .preparing {
                             ProgressView().controlSize(.mini)
@@ -105,6 +102,7 @@ struct NowPlayingView: View {
             ZStack {
                 if player.current != nil {
                     AsyncImage(url: art) { $0.image?.resizable().aspectRatio(contentMode: .fill) }
+                        .id(art)
                         .blur(radius: 40)
                         .opacity(0.45)
                 }

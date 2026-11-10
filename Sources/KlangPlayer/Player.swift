@@ -427,7 +427,7 @@ final class Player: ObservableObject {
 
     private func didl(_ t: Track, url: String, mime: String) -> String {
         var art = ""
-        if let img = Emby.shared.imageURL(itemId: t.AlbumId, tag: t.AlbumPrimaryImageTag, size: 500) {
+        if let img = t.artURL(size: 500) {
             art = "<upnp:albumArtURI>\(xmlEscape(img.absoluteString))</upnp:albumArtURI>"
         }
         return """

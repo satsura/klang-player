@@ -95,7 +95,7 @@ final class Integrations {
     private func loadArt() {
         guard let t = player.current, t.Id != artTrackId else { return }
         let id = t.Id
-        guard let url = Emby.shared.imageURL(itemId: t.AlbumId, tag: t.AlbumPrimaryImageTag, size: 600) else {
+        guard let url = t.artURL(size: 600) else {
             artTrackId = id; artImage = nil; artData = nil
             return
         }
