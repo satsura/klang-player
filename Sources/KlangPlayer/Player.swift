@@ -17,6 +17,10 @@ final class Player: ObservableObject {
     @Published var status: String?
     /// "AAC 320" / "MP3 320" — what actually goes to the speaker.
     @Published private(set) var outputLabel: String?
+    /// Sleep timer: pause at this time, or after the current track.
+    @Published private(set) var sleepAt: Date?
+    @Published private(set) var sleepAfterTrack = false
+
     /// Progress of preparing the current track (download / conversion).
     @Published private(set) var preparePhase: PreparePhase?
 
@@ -59,6 +63,7 @@ final class Player: ObservableObject {
                 // Volume can change on the speaker itself (knob, remote, its app) — keep re-reading it.
                 if self.ticks % 2 == 0 { await self.syncVolume() }
                 if self.ticks % 5 == 0 { self.saveQueue() }
+                if let at = self.sleepAt, Date() >= at { self.sleepNow() }
                 await self.poll()
             }
         }
@@ -263,7 +268,7 @@ final class Player: ObservableObject {
     private func queueNext(_ gen: Int) async {
         prefetchAhead()
         let ni = index + 1
-        guard queue.indices.contains(ni) else { return }
+        guard queue.indices.contains(ni), !sleepAfterTrack else { return }
         let t = queue[ni]
         guard let (url, mime) = try? await urlFor(t), gen == generation,
               queue.indices.contains(index + 1), queue[index + 1].Id == t.Id else { return }
@@ -353,6 +358,12 @@ final class Player: ObservableObject {
             outputLabel = label(nu.mime)
             stoppedPolls = 0
             Reporter.shared.started(queue[index], mime: nu.mime, previousPosition: nil)
+            if sleepAfterTrack {
+                // The speaker already moved on: pause right away and rewind the new track.
+                sleepNow()
+                seek(to: 0)
+                return
+            }
             await queueNext(generation)
             return
         }
@@ -380,7 +391,13 @@ final class Player: ObservableObject {
             stoppedPolls += 1
             guard stoppedPolls >= 2 else { break }
             let nearEnd = duration > 0 && duration - lastPosition < 6
-            if nearEnd && index + 1 < queue.count {
+            if nearEnd && sleepAfterTrack {
+                Reporter.shared.stopped(at: duration)
+                sleepAfterTrack = false
+                state = .idle
+                keepAwake(false)
+                if index + 1 < queue.count { index += 1; position = 0; duration = queue[index].duration }
+            } else if nearEnd && index + 1 < queue.count {
                 await startTrack(index + 1)
             } else {
                 Reporter.shared.stopped(at: nearEnd ? duration : lastPosition)
@@ -421,6 +438,26 @@ final class Player: ObservableObject {
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>\
         <res protocolInfo="http-get:*:\(mime):*" duration="\(hms(t.duration))">\(xmlEscape(url))</res></item></DIDL-Lite>
         """
+    }
+
+    // MARK: Sleep timer
+
+    func setSleepTimer(minutes: Int?) {
+        sleepAfterTrack = false
+        sleepAt = minutes.map { Date().addingTimeInterval(Double($0) * 60) }
+    }
+
+    func setSleepAfterTrack() {
+        sleepAt = nil
+        sleepAfterTrack = true
+        // The next track may already be handed to the speaker; replace it with nothing.
+        Task { try? await Speaker.shared.setNext("", meta: "") }
+    }
+
+    private func sleepNow() {
+        sleepAt = nil
+        sleepAfterTrack = false
+        if state == .playing { toggle() }
     }
 
     // MARK: Saved queue
@@ -499,6 +536,18 @@ final class Player: ObservableObject {
             log(String(format: "started in %.1fs, state=\(state), out=\(outputLabel ?? "-"), status=\(status ?? "-")", Date().timeIntervalSince(t0)))
             try await Task.sleep(nanoseconds: 5_000_000_000)
             log("pos=\(position) dur=\(duration) idx=\(index) state=\(state)")
+            if ProcessInfo.processInfo.environment["KLANG_SLEEPTEST"] != nil {
+                setSleepAfterTrack()
+                try await Task.sleep(nanoseconds: 2_000_000_000)
+                seek(to: max(0, duration - 6))
+                try await Task.sleep(nanoseconds: 16_000_000_000)
+                let ts = (try? await Speaker.shared.transportState()) ?? "?"
+                log("sleep after track: idx=\(index) state=\(state) speaker=\(ts) timerLeft=\(sleepAfterTrack)")
+                stop()
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+                if Config.speaker?.kind == .frontier { try await Speaker.shared.setVolume(vol) }
+                exit(0)
+            }
             next()
             for _ in 0..<40 {
                 try await Task.sleep(nanoseconds: 1_000_000_000)

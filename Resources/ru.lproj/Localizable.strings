@@ -66,6 +66,9 @@
 "Queue is empty" = "Очередь пуста";
 "Speaker volume: %lld" = "Громкость колонки: %lld";
 "Pick something to play below" = "Выбери музыку ниже";
+"Sleep timer" = "Таймер сна";
+"After this track" = "После этого трека";
+"Turn Off Timer" = "Выключить таймер";
 
 /* Settings */
 "Settings" = "Настройки";

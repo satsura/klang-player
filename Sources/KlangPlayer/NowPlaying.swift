@@ -85,6 +85,7 @@ struct NowPlayingView: View {
                 .disabled(player.current == nil)
                 Spacer()
                 HStack(spacing: 12) {
+                    SleepButton()
                     Button { MiniPlayer.shared.toggle() } label: { Image(systemName: "pip") }
                         .help("Floating card")
                     Button(action: showQueue) {
@@ -175,5 +176,38 @@ struct QueueView: View {
                 }
             }
         }
+    }
+}
+
+/// Moon button with the sleep timer menu and the time left.
+struct SleepButton: View {
+    @ObservedObject var player = Player.shared
+
+    var body: some View {
+        Menu {
+            ForEach([15, 30, 45, 60, 120], id: \.self) { m in
+                Button("\(m) min") { player.setSleepTimer(minutes: m) }
+            }
+            Button("After this track") { player.setSleepAfterTrack() }
+            if player.sleepAt != nil || player.sleepAfterTrack {
+                Divider()
+                Button("Turn Off Timer") { player.setSleepTimer(minutes: nil) }
+            }
+        } label: {
+            TimelineView(.periodic(from: .now, by: 30)) { _ in
+                HStack(spacing: 2) {
+                    Image(systemName: player.sleepAt != nil || player.sleepAfterTrack ? "moon.zzz.fill" : "moon.zzz")
+                    if let at = player.sleepAt {
+                        Text(verbatim: "\(max(1, Int(at.timeIntervalSinceNow / 60) + 1))'")
+                            .font(.system(size: 10).monospacedDigit())
+                    }
+                }
+                .foregroundStyle(player.sleepAt != nil || player.sleepAfterTrack ? Color.accentColor : .primary)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Sleep timer")
     }
 }
