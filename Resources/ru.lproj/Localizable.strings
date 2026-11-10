@@ -93,6 +93,15 @@
 "Restart to apply the language" = "Перезапусти, чтобы сменить язык";
 "Restart" = "Перезапустить";
 
+/* Phone remote */
+"Phone Remote" = "Пульт с телефона";
+"Control from a phone on the home network" = "Управлять с телефона в домашней сети";
+"Scan with the phone camera or open the link:" = "Наведи камеру телефона или открой ссылку:";
+"Copy Link" = "Копировать ссылку";
+"New Key" = "Новый ключ";
+"Old links stop working" = "Старые ссылки перестанут работать";
+"No connection to the Mac" = "Нет связи с Mac";
+
 /* Widget */
 "App is not running" = "Приложение не запущено";
 "What's playing on the speaker" = "Что играет на колонке";

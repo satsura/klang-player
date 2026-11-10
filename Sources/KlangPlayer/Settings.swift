@@ -19,6 +19,8 @@ struct SettingsView: View {
     @State private var loginItem = SMAppService.mainApp.status == .enabled
     @State private var loginItemError: String?
     @State private var menuBar = Integrations.showInMenuBar
+    @State private var remoteOn = Remote.enabled
+    @State private var remoteURL = Remote.url
     @State private var language = Config.language
     private let startLanguage = Config.language
 
@@ -83,6 +85,35 @@ struct SettingsView: View {
                     Text("Speakers that accept FLAC get the original files. Others (Loewe klang and other Frontier Silicon speakers) get AAC 320.")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+
+                group("Phone Remote", icon: "iphone") {
+                    Toggle("Control from a phone on the home network", isOn: $remoteOn)
+                        .font(.system(size: 12))
+                        .onChange(of: remoteOn) { Remote.enabled = remoteOn; remoteURL = Remote.url }
+                    if remoteOn, let url = remoteURL {
+                        HStack(alignment: .top, spacing: 12) {
+                            if let qr = Remote.qrCode(url) {
+                                Image(nsImage: qr).interpolation(.none).resizable().frame(width: 96, height: 96)
+                                    .padding(4).background(.white, in: RoundedRectangle(cornerRadius: 6))
+                            }
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Scan with the phone camera or open the link:")
+                                    .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text(verbatim: url).font(.system(size: 10).monospaced()).textSelection(.enabled).lineLimit(3)
+                                HStack {
+                                    Button("Copy Link") {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(url, forType: .string)
+                                    }
+                                    Button("New Key") { Remote.regenerate(); remoteURL = Remote.url }
+                                        .help("Old links stop working")
+                                }
+                                .controlSize(.small)
+                            }
+                        }
+                    }
                 }
 
                 group("Mac", icon: "laptopcomputer") {

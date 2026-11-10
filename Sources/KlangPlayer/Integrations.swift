@@ -28,7 +28,8 @@ final class Integrations {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.update() }
             .store(in: &bag)
-        FileServer.shared.api = { method, path in Integrations.handleAPI(method, path) }
+        FileServer.shared.api = { method, path, query in Integrations.handleAPI(method, path, query) }
+        FileServer.shared.remoteKey = Remote.enabled ? Remote.key : nil
         update()
     }
 
@@ -146,8 +147,18 @@ final class Integrations {
     }
 
     /// Runs on the file server queue.
-    nonisolated static func handleAPI(_ method: String, _ path: String) -> (Int, String, Data) {
+    nonisolated static func handleAPI(_ method: String, _ path: String, _ query: [String: String]) -> (Int, String, Data) {
         switch path {
+        case "/remote":
+            return (200, "text/html; charset=utf-8", Data(Remote.page.utf8))
+        case "/api/volume", "/api/seek":
+            guard method == "POST", let v = Double(query["v"] ?? "") else { return (400, "text/plain", Data()) }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    if path == "/api/volume" { Player.shared.setVolume(v) } else { Player.shared.seek(to: v) }
+                }
+            }
+            return (204, "text/plain", Data())
         case "/api/state":
             lock.lock(); defer { lock.unlock() }
             return (200, "application/json", stateJSON)

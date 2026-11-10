@@ -9,8 +9,11 @@ final class FileServer {
     private var listener: NWListener?
     private var files: [String: (url: URL, mime: String)] = [:]
     private(set) var port: UInt16 = 0
-    /// Local control API (/api/*), answered only for connections from this Mac. Called on the server queue.
-    var api: ((_ method: String, _ path: String) -> (Int, String, Data))?
+    /// Control API (/api/*, /remote). Answered for this Mac, and for the home network only when
+    /// the phone remote is on and the request carries the secret key (?k=…). Called on the server queue.
+    var api: ((_ method: String, _ path: String, _ query: [String: String]) -> (Int, String, Data))?
+    /// Set from settings: allow /api and /remote from the network with this key.
+    var remoteKey: String?
 
     func start() {
         guard listener == nil else { return }
@@ -91,18 +94,26 @@ final class FileServer {
             }
         }
 
-        if path.hasPrefix("/api/") {
+        if path.hasPrefix("/api/") || path == "/remote" {
+            var query: [String: String] = [:]
+            if let q = req[1].split(separator: "?", maxSplits: 1).dropFirst().first {
+                for pair in q.split(separator: "&") {
+                    let kv = pair.split(separator: "=", maxSplits: 1).map { String($0).removingPercentEncoding ?? String($0) }
+                    if kv.count == 2 { query[kv[0]] = kv[1] }
+                }
+            }
             var local = false
             if case .hostPort(let host, _) = c.endpoint {
                 let h = "\(host)"
                 local = h == "127.0.0.1" || h == "::1" || h.hasPrefix("::ffff:127.0.0.1")
             }
-            guard local, let api else {
+            let keyOK = remoteKey.map { !$0.isEmpty && query["k"] == $0 } ?? false
+            guard local || keyOK, let api else {
                 send(c, "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
                 return
             }
-            let (status, type, body) = api(method, path)
-            let reason = [200: "OK", 204: "No Content", 404: "Not Found", 405: "Method Not Allowed"][status] ?? "OK"
+            let (status, type, body) = api(method, path, query)
+            let reason = [200: "OK", 204: "No Content", 400: "Bad Request", 404: "Not Found", 405: "Method Not Allowed"][status] ?? "OK"
             var d = Data("HTTP/1.1 \(status) \(reason)\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n".utf8)
             d.append(body)
             c.send(content: d, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in c.cancel() })
