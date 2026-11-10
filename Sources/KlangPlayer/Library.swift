@@ -44,8 +44,14 @@ final class Library: ObservableObject {
                 let c = $0.artist.localizedStandardCompare($1.artist)
                 return c == .orderedSame ? ($0.ProductionYear ?? 0) < ($1.ProductionYear ?? 0) : c == .orderedAscending
             }
-            artists = Dictionary(grouping: a, by: { $0.artist.isEmpty ? String(localized: "Unknown artist") : $0.artist })
-                .map { Artist(name: $0.key, albums: $0.value.sorted { ($0.ProductionYear ?? 0) < ($1.ProductionYear ?? 0) }) }
+            artists = Dictionary(grouping: a, by: { Library.artistKey($0.artist) })
+                .map { _, albums in
+                    // Show the most common spelling (ties: the one with more spaces, e.g. "A & B" over "A&B").
+                    let names = Dictionary(grouping: albums.map(\.artist), by: { $0 })
+                    let name = names.max { ($0.value.count, $0.key.filter { $0 == " " }.count) < ($1.value.count, $1.key.filter { $0 == " " }.count) }?.key ?? ""
+                    return Artist(name: name.isEmpty ? String(localized: "Unknown artist") : name,
+                                  albums: albums.sorted { ($0.ProductionYear ?? 0) < ($1.ProductionYear ?? 0) })
+                }
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             roots = (try? await Emby.shared.musicLibraries()) ?? []
             await loadHome()
@@ -55,6 +61,14 @@ final class Library: ObservableObject {
             self.error = error.localizedDescription
         }
         loading = false
+    }
+
+    /// "Angus&Julia Stone" and "angus & julia  stone" are the same artist.
+    nonisolated static func artistKey(_ name: String) -> String {
+        name.lowercased()
+            .replacingOccurrences(of: #"\s*&\s*"#, with: " & ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
     }
 
     func loadHome() async {

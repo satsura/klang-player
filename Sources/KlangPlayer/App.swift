@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = CommandLine.arguments
+        if args.contains("--dark") { NSApp.appearance = NSAppearance(named: .darkAqua) }
         if !args.contains("--discover") {
             Task { @MainActor in
                 _ = Player.shared
