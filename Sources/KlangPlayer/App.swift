@@ -32,10 +32,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = CommandLine.arguments
         if args.contains("--dark") { NSApp.appearance = NSAppearance(named: .darkAqua) }
-        if !args.contains("--discover") {
+        if !args.contains("--discover") && !args.contains("--relocate") {
             Task { @MainActor in
                 _ = Player.shared
                 StatusBar.shared.start()
+                // Refresh the speaker list and the current speaker's address in the background.
+                if !args.contains("--selftest") && !args.contains("--preview") {
+                    Task { await Player.relocateSpeaker() }
+                }
                 Integrations.shared.start()
                 MiniPlayer.shared.restore()
                 if !Config.isConfigured { StatusBar.shared.showPopover() }
@@ -58,10 +62,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 exit(0)
             }
         }
+        // Debug: run speaker relocation once and print the result.
+        if args.contains("--relocate") {
+            Task { @MainActor in
+                let t0 = Date()
+                let moved = await Player.relocateSpeaker()
+                let sp = Config.speaker
+                print("moved=\(moved) speaker=\(sp?.name ?? "-")@\(sp?.ip ?? "-") udn=\(sp?.udn ?? "-") in \(String(format: "%.1f", Date().timeIntervalSince(t0)))s")
+                exit(0)
+            }
+        }
         if args.contains("--discover") {
             Task {
-                for r in await Discovery.renderers() {
-                    print("\(r.isSupported ? "+" : " ") \(r.ip)  \(r.name)  [\(r.manufacturer)]")
+                for p in await Discovery.speakers() {
+                    print("\(p.kind.rawValue)\t\(p.ip)\t\(p.name) [\(p.manufacturer)] udn=\(p.udn)\n\tav=\(p.avControl) rc=\(p.rcControl ?? "-")\n\t\(p.formatLabel)  sinks: \(p.sinks.joined(separator: " "))")
                 }
                 exit(0)
             }

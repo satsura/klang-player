@@ -155,11 +155,15 @@ struct ContentView: View {
             if lib.loading {
                 ProgressView().controlSize(.mini)
             }
-            Text(player.status ?? lib.error ?? speakerLine)
-                .font(.system(size: 10.5))
-                .foregroundStyle(player.status != nil || lib.error != nil ? .red : .secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            if let err = player.status ?? lib.error {
+                Text(err)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            } else {
+                speakerMenu
+            }
             Spacer()
             Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }
                 .buttonStyle(.borderless)
@@ -167,6 +171,34 @@ struct ContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
+    }
+
+    /// Speaker name with a menu to switch to another speaker.
+    private var speakerMenu: some View {
+        Menu {
+            ForEach(Config.knownSpeakers) { sp in
+                Button {
+                    player.useSpeaker(sp)
+                } label: {
+                    let line = "\(sp.name) · \(sp.formatLabel)"
+                    if sp.id == Config.speaker?.id { Label(line, systemImage: "checkmark") } else { Text(verbatim: line) }
+                }
+            }
+            if !Config.knownSpeakers.isEmpty { Divider() }
+            Button("Find Speakers…") {
+                overlay = .settings
+                Task { await Player.relocateSpeaker() }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "hifispeaker").font(.system(size: 10))
+                Text(verbatim: speakerLine).font(.system(size: 10.5))
+            }
+            .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 
     private var speakerLine: String {

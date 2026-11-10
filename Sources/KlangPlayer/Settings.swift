@@ -13,7 +13,7 @@ struct SettingsView: View {
     @State private var loggedIn = !Config.apiKey.isEmpty
 
     @State private var speakerIP = Config.speakerIP
-    @State private var speakers: [Renderer] = []
+    @State private var speakers: [SpeakerProfile] = Config.knownSpeakers
     @State private var searching = false
 
     @State private var loginItem = SMAppService.mainApp.status == .enabled
@@ -71,19 +71,16 @@ struct SettingsView: View {
                             Image(systemName: s.ip == speakerIP ? "largecircle.fill.circle" : "circle")
                                 .foregroundStyle(s.ip == speakerIP ? Color.accentColor : .secondary)
                             VStack(alignment: .leading, spacing: 0) {
-                                Text(s.name).font(.system(size: 12))
-                                Text(verbatim: "\(s.manufacturer) · \(s.ip)" + (s.isSupported ? "" : " · " + String(localized: "may not work")))
+                                Text(verbatim: s.name).font(.system(size: 12))
+                                Text(verbatim: [s.manufacturer, s.ip, s.formatLabel].filter { !$0.isEmpty }.joined(separator: " · "))
                                     .font(.system(size: 10)).foregroundStyle(.secondary)
                             }
                             Spacer()
                         }
                         .contentShape(Rectangle())
-                        .onTapGesture {
-                            speakerIP = s.ip
-                            Config.speakerName = s.name
-                        }
+                        .onTapGesture { speakerIP = s.ip }
                     }
-                    Text("Supported: speakers built on Frontier Silicon (Loewe klang and others). Over the network they play AAC, not FLAC.")
+                    Text("Speakers that accept FLAC get the original files. Others (Loewe klang and other Frontier Silicon speakers) get AAC 320.")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -191,19 +188,22 @@ struct SettingsView: View {
 
     private func discover() async {
         searching = true
-        speakers = await Discovery.renderers()
-        if speakerIP.isEmpty, let s = speakers.first(where: \.isSupported) {
+        let found = await Discovery.speakers()
+        if !found.isEmpty {
+            speakers = found
+            Config.knownSpeakers = found
+        }
+        if speakerIP.isEmpty, let s = found.first(where: { $0.kind == .frontier }) ?? found.first {
             speakerIP = s.ip
-            Config.speakerName = s.name
         }
         searching = false
     }
 
     private func save() {
         if server != Config.embyURL { Config.embyURL = server }
-        if speakerIP != Config.speakerIP {
-            Config.speakerIP = speakerIP
-            if let s = speakers.first(where: { $0.ip == speakerIP }) { Config.speakerName = s.name }
+        if speakerIP != Config.speakerIP, !speakerIP.isEmpty {
+            // A speaker from the list, or a Frontier speaker typed in by IP.
+            player.useSpeaker(speakers.first { $0.ip == speakerIP } ?? .frontier(ip: speakerIP))
         }
         Task { await player.refreshVolume() }
         done()

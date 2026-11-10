@@ -24,15 +24,31 @@ enum Config {
         set { d.set(newValue, forKey: "userName") }
     }
 
-    static var speakerIP: String {
-        get { d.string(forKey: "speakerIP") ?? "" }
-        set { d.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "speakerIP") }
+    /// The speaker in use.
+    static var speaker: SpeakerProfile? {
+        get {
+            if let data = d.data(forKey: "speaker"), let p = try? JSONDecoder().decode(SpeakerProfile.self, from: data) { return p }
+            // Older versions stored only the IP of a Frontier speaker.
+            if let ip = d.string(forKey: "speakerIP"), !ip.isEmpty {
+                return .frontier(ip: ip, name: d.string(forKey: "speakerName") ?? ip)
+            }
+            return nil
+        }
+        set {
+            d.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: "speaker")
+            d.removeObject(forKey: "speakerIP")
+            d.removeObject(forKey: "speakerName")
+        }
     }
 
-    static var speakerName: String {
-        get { d.string(forKey: "speakerName") ?? "" }
-        set { d.set(newValue, forKey: "speakerName") }
+    /// Speakers found on the network last time (for the quick switcher).
+    static var knownSpeakers: [SpeakerProfile] {
+        get { d.data(forKey: "knownSpeakers").flatMap { try? JSONDecoder().decode([SpeakerProfile].self, from: $0) } ?? [] }
+        set { d.set(try? JSONEncoder().encode(newValue), forKey: "knownSpeakers") }
     }
+
+    static var speakerIP: String { speaker?.ip ?? "" }
+    static var speakerName: String { speaker?.name ?? "" }
 
     static var deviceId: String {
         if let id = d.string(forKey: "deviceId") { return id }
@@ -121,4 +137,16 @@ func mmss(_ seconds: Double) -> String {
 func totalDuration(_ tracks: [Track]) -> String {
     let m = Int(tracks.reduce(0) { $0 + $1.duration } / 60)
     return m >= 60 ? String(localized: "\(m / 60) h \(m % 60) min") : String(localized: "\(m) min")
+}
+
+/// Appends a line to ~/Library/Caches/KlangPlayer/debug.log.
+func debugLog(_ s: String) {
+    let url = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("KlangPlayer/debug.log")
+    let line = Data("\(Date()) \(s)\n".utf8)
+    if let h = try? FileHandle(forWritingTo: url) {
+        h.seekToEndOfFile(); h.write(line); try? h.close()
+    } else {
+        try? line.write(to: url)
+    }
 }

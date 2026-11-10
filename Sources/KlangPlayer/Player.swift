@@ -180,7 +180,7 @@ final class Player: ObservableObject {
 
     // MARK: Playback
 
-    private func startTrack(_ i: Int) async {
+    private func startTrack(_ i: Int, retried: Bool = false) async {
         guard queue.indices.contains(i) else { return }
         generation += 1
         let gen = generation
@@ -207,10 +207,41 @@ final class Player: ObservableObject {
             await queueNext(gen)
         } catch {
             guard gen == generation else { return }
+            // Can't reach the speaker: it may have a new IP. Find it again by UDN and retry once.
+            if !retried, error is URLError, await Player.relocateSpeaker() {
+                urls = [:]
+                await startTrack(i, retried: true)
+                return
+            }
             state = .idle
             status = error.localizedDescription
             keepAwake(false)
         }
+    }
+
+    /// Re-discovers speakers; updates the current one if its address or details changed.
+    /// Returns true if the current speaker was found at a different address.
+    @discardableResult
+    static func relocateSpeaker() async -> Bool {
+        let found = await Discovery.speakers()
+        if !found.isEmpty { Config.knownSpeakers = found }
+        guard let cur = Config.speaker else { return false }
+        var match = found.first { !cur.udn.isEmpty && $0.udn == cur.udn }
+            ?? found.first { $0.ip == cur.ip && $0.kind == cur.kind }
+        // SSDP found nothing (e.g. no Local Network permission): ask the known address directly…
+        if match == nil, let loc = cur.location ?? (cur.kind == .frontier ? "http://\(cur.ip):8080/dd.xml" : nil),
+           let u = URL(string: loc), let (data, _) = try? await URLSession.shared.data(for: URLRequest(url: u, timeoutInterval: 3)),
+           let p = await Discovery.complete(ip: cur.ip, location: u, data: data), cur.udn.isEmpty || p.udn == cur.udn {
+            match = p
+        }
+        // …and if it's not there any more, look for the same UDN across the subnet.
+        if match == nil, !cur.udn.isEmpty {
+            match = await Discovery.scan(for: cur)
+        }
+        debugLog("relocate: ssdp \(found.count), match \(match.map { "\($0.name)@\($0.ip)" } ?? "-"), current \(cur.ip)")
+        guard let match, match != cur else { return false }
+        Config.speaker = match
+        return match.ip != cur.ip
     }
 
     /// Prepares the following track and hands it to the speaker for a gapless switch.
@@ -225,6 +256,12 @@ final class Player: ObservableObject {
 
     private func urlFor(_ t: Track) async throws -> (String, String) {
         if let u = urls[t.Id] { return (u.url, u.mime) }
+        // Speakers that take FLAC get the original straight from Emby — no conversion, no Mac in the path.
+        if let sp = Config.speaker, let flac = sp.flacMime, t.codec == "flac" {
+            let u = Emby.shared.originalURL(t).absoluteString
+            urls[t.Id] = (u, flac)
+            return (u, flac)
+        }
         let p = try await Preparer.shared.prepare(t)
         let url: String
         switch p.source {
@@ -238,7 +275,34 @@ final class Player: ObservableObject {
         return (url, p.mime)
     }
 
-    private func label(_ mime: String) -> String { mime == "audio/mp4" ? "AAC 320" : "MP3 320" }
+    private func label(_ mime: String) -> String {
+        switch mime {
+        case "audio/mp4": "AAC 320"
+        case "audio/mpeg": "MP3 320"
+        default: "FLAC"
+        }
+    }
+
+    /// Switches playback to another speaker; continues the current track there.
+    func useSpeaker(_ p: SpeakerProfile) {
+        let old = Config.speaker
+        guard old?.id != p.id || old?.ip != p.ip else { return }
+        let resume = state == .playing ? position : nil
+        generation += 1
+        state = current == nil ? .idle : .paused
+        keepAwake(false)
+        Task {
+            if let old { try? await Speaker.shared.stop(old) }
+            Config.speaker = p
+            Speaker.shared.resetModeCache()
+            urls = [:] // formats differ between speakers
+            await refreshVolume()
+            if let resume, current != nil {
+                await startTrack(index)
+                if state == .playing, resume > 5 { seek(to: resume) }
+            }
+        }
+    }
 
     private func poll() async {
         guard !polling, state == .playing || state == .paused else { return }
@@ -347,8 +411,15 @@ final class Player: ObservableObject {
             guard let album = albums.first(where: { !want.isEmpty && $0.Name.contains(want) }) ?? albums.first else { exit(1) }
             let tracks = try await Emby.shared.tracks(album: album.Id)
             log("album: \(album.Name) — \(tracks.count) tracks, first: \(tracks.first?.Name ?? "-") \(tracks.first?.sourceLabel ?? "")")
+            let savedSpeaker = Config.speaker
+            if let want = ProcessInfo.processInfo.environment["KLANG_SPEAKER"] {
+                guard let sp = await Discovery.speakers().first(where: { $0.ip == want || $0.name == want }) else { log("no speaker \(want)"); exit(1) }
+                Config.speaker = sp
+                log("speaker: \(sp.name) \(sp.kind.rawValue) \(sp.formatLabel)")
+            }
+            defer { Config.speaker = savedSpeaker }
             let vol = try await Speaker.shared.volume()
-            try await Speaker.shared.setVolume(10)
+            if Config.speaker?.kind == .frontier { try await Speaker.shared.setVolume(10) }
             let t0 = Date()
             play(Array(tracks.prefix(3)), at: 0)
             for _ in 0..<40 {
@@ -375,8 +446,9 @@ final class Player: ObservableObject {
             log("after track end: idx=\(index) \(current?.Name ?? "-") pos=\(position) state=\(state) status=\(status ?? "-")")
             stop()
             try await Task.sleep(nanoseconds: 2_000_000_000)
-            try await Speaker.shared.setVolume(vol)
-            log("stopped, volume restored to \(vol)")
+            if Config.speaker?.kind == .frontier { try await Speaker.shared.setVolume(vol) }
+            Config.speaker = savedSpeaker
+            log("stopped, volume \(vol)")
             exit(0)
         } catch {
             log("FAIL: \(error.localizedDescription)")

@@ -25,6 +25,7 @@
 "Show" = "Показать";
 "Done" = "Готово";
 "Find" = "Найти";
+"Find Speakers…" = "Найти колонки…";
 "Quit" = "Выйти";
 "Close Card" = "Закрыть карточку";
 "Next:" = "Далее:";
@@ -80,7 +81,7 @@
 "Password" = "Пароль";
 "Speaker" = "Колонка";
 "may not work" = "может не работать";
-"Supported: speakers built on Frontier Silicon (Loewe klang and others). Over the network they play AAC, not FLAC." = "Поддерживаются колонки на Frontier Silicon (Loewe klang и др.): по сети они играют AAC, но не FLAC.";
+"Speakers that accept FLAC get the original files. Others (Loewe klang and other Frontier Silicon speakers) get AAC 320." = "Колонки, которые принимают FLAC, получают оригинальные файлы. Остальные (Loewe klang и другие на Frontier Silicon) — AAC 320.";
 "Launch at login" = "Запускать при входе";
 "Track and buttons in the menu bar" = "Название и кнопки в строке меню";
 "AAC cache: up to 3 GB" = "Кэш AAC: до 3 ГБ";
