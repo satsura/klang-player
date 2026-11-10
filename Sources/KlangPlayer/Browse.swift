@@ -25,6 +25,8 @@ struct ContentView: View {
     @State private var stacks: [Tab: [Route]] = [:]
     @State private var query = ""
     @State private var overlay: Overlay?
+    @FocusState private var searchFocused: Bool
+    @FocusState private var rootFocused: Bool
 
     enum Overlay { case settings, queue }
 
@@ -47,7 +49,18 @@ struct ContentView: View {
             footer
         }
         .frame(width: 400, height: 680)
-        .onAppear { if !Config.isConfigured { overlay = .settings } }
+        .focusable()
+        .focusEffectDisabled()
+        .focused($rootFocused)
+        .onKeyPress(.space) { player.toggle(); return .handled }
+        .onKeyPress(.leftArrow) { seek(-10) }
+        .onKeyPress(.rightArrow) { seek(10) }
+        .onKeyPress(.escape) { back() }
+        .background { hotkeys }
+        .onAppear {
+            if !Config.isConfigured { overlay = .settings }
+            rootFocused = true
+        }
     }
 
     private var browser: some View {
@@ -59,7 +72,7 @@ struct ContentView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(width: 210)
-                SearchField(text: $query)
+                SearchField(text: $query, focused: $searchFocused)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -103,6 +116,32 @@ struct ContentView: View {
 
     private func pop() { _ = stacks[tab]?.popLast() }
 
+    private func seek(_ delta: Double) -> KeyPress.Result {
+        guard player.current != nil else { return .ignored }
+        player.seek(to: min(max(0, player.position + delta), max(0, player.duration - 1)))
+        return .handled
+    }
+
+    /// Esc: clear search → close queue/settings → go back.
+    private func back() -> KeyPress.Result {
+        if !query.isEmpty { query = ""; return .handled }
+        if overlay != nil { overlay = nil; return .handled }
+        if !(stacks[tab]?.isEmpty ?? true) { pop(); return .handled }
+        return .ignored
+    }
+
+    /// Invisible buttons that carry ⌘ shortcuts.
+    private var hotkeys: some View {
+        Group {
+            Button("") { overlay = nil; searchFocused = true }.keyboardShortcut("f", modifiers: .command)
+            Button("") { player.setVolume(player.volume + 1) }.keyboardShortcut(.upArrow, modifiers: .command)
+            Button("") { player.setVolume(player.volume - 1) }.keyboardShortcut(.downArrow, modifiers: .command)
+            Button("") { _ = back() }.keyboardShortcut("[", modifiers: .command)
+        }
+        .opacity(0)
+        .allowsHitTesting(false)
+    }
+
     private var footer: some View {
         HStack(spacing: 10) {
             Button { overlay = overlay == .settings ? nil : .settings } label: { Image(systemName: "gearshape") }
@@ -134,10 +173,16 @@ struct ContentView: View {
 
 struct SearchField: View {
     @Binding var text: String
+    var focused: FocusState<Bool>.Binding
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.secondary)
             TextField("Search", text: $text)
+                .focused(focused)
+                .onKeyPress(.escape) {
+                    if text.isEmpty { focused.wrappedValue = false } else { text = "" }
+                    return .handled
+                }
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
             if !text.isEmpty {
