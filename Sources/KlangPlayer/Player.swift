@@ -110,11 +110,13 @@ final class Player: ObservableObject {
         case .playing:
             state = .paused
             Task { await run { try await Speaker.shared.pause() } }
+            Reporter.shared.progress(position: position, paused: true, force: true)
             keepAwake(false)
         case .paused:
             state = .playing
             keepAwake(true)
             Task { await run { try await Speaker.shared.play() } }
+            Reporter.shared.progress(position: position, paused: false, force: true)
         case .idle:
             if current != nil { Task { await startTrack(index) } }
         case .preparing:
@@ -144,6 +146,7 @@ final class Player: ObservableObject {
 
     func stop() {
         generation += 1
+        Reporter.shared.stopped(at: position)
         state = .idle
         keepAwake(false)
         Task { await run { try await Speaker.shared.stop() } }
@@ -184,6 +187,7 @@ final class Player: ObservableObject {
         guard queue.indices.contains(i) else { return }
         generation += 1
         let gen = generation
+        let previousPosition = position
         index = i
         state = .preparing
         preparePhase = nil
@@ -204,6 +208,7 @@ final class Player: ObservableObject {
             preparePhase = nil
             outputLabel = label(mime)
             keepAwake(true)
+            Reporter.shared.started(t, mime: mime, previousPosition: previousPosition)
             await queueNext(gen)
         } catch {
             guard gen == generation else { return }
@@ -288,6 +293,7 @@ final class Player: ObservableObject {
         let old = Config.speaker
         guard old?.id != p.id || old?.ip != p.ip else { return }
         let resume = state == .playing ? position : nil
+        Reporter.shared.stopped(at: position)
         generation += 1
         state = current == nil ? .idle : .paused
         keepAwake(false)
@@ -321,11 +327,13 @@ final class Player: ObservableObject {
             duration = queue[index].duration
             outputLabel = label(nu.mime)
             stoppedPolls = 0
+            Reporter.shared.started(queue[index], mime: nu.mime, previousPosition: nil)
             await queueNext(generation)
             return
         }
         // Someone else took over the speaker (radio, Spotify, Bluetooth…).
         if !info.uri.isEmpty, let cur = current, info.uri != urls[cur.Id]?.url {
+            Reporter.shared.stopped(at: position)
             state = .idle
             keepAwake(false)
             return
@@ -338,6 +346,7 @@ final class Player: ObservableObject {
         case "PLAYING":
             stoppedPolls = 0
             lastPosition = info.rel
+            Reporter.shared.progress(position: info.rel, paused: false)
             if state != .playing { state = .playing; keepAwake(true) }
         case "PAUSED_PLAYBACK":
             if state != .paused { state = .paused; keepAwake(false) }
@@ -349,6 +358,7 @@ final class Player: ObservableObject {
             if nearEnd && index + 1 < queue.count {
                 await startTrack(index + 1)
             } else {
+                Reporter.shared.stopped(at: nearEnd ? duration : lastPosition)
                 state = .idle
                 if nearEnd { position = 0 }
                 keepAwake(false)

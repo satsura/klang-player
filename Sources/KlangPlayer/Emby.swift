@@ -145,6 +145,13 @@ final class Emby {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    /// Identifies this app as an Emby client device (needed for session reporting).
+    var authHeader: String {
+        let device = (Host.current().localizedName ?? "Mac").replacingOccurrences(of: "\"", with: "")
+        return "Emby UserId=\"\(Config.userId)\", Client=\"KlangPlayer\", Device=\"\(device)\", "
+            + "DeviceId=\"\(Config.deviceId)\", Version=\"1.0\", Token=\"\(Config.apiKey)\""
+    }
+
     /// Logs in with username/password, returns access token and user id.
     func login(server: String, user: String, password: String) async throws -> (token: String, userId: String) {
         guard let u = URL(string: base(server) + "/Users/AuthenticateByName") else { throw PlayerError.login(String(localized: "Invalid server address")) }
