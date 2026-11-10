@@ -183,6 +183,8 @@ final class Integrations {
             "position": player.position,
             "duration": player.duration,
             "hasNext": !player.upcoming.isEmpty,
+            "volume": Int(player.volume),
+            "maxVolume": Int(player.maxVolume),
             "artId": artTrackId == t?.Id ? (t?.Id ?? "") : "",
         ]
         let json = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)

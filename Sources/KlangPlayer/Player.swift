@@ -12,7 +12,7 @@ final class Player: ObservableObject {
     @Published private(set) var state: State = .idle
     @Published var position: Double = 0
     @Published private(set) var duration: Double = 0
-    @Published var volume: Double = 0
+    @Published private(set) var volume: Double = 0
     @Published private(set) var maxVolume: Double = 32
     @Published var status: String?
     /// "AAC 320" / "MP3 320" — what actually goes to the speaker.
@@ -29,6 +29,9 @@ final class Player: ObservableObject {
     private var lastPosition: Double = 0
     private var activity: NSObjectProtocol?
     private var volumeTask: Task<Void, Never>?
+    private var lastUserVolume = Date.distantPast
+    private var volumeReading = false
+    private var ticks = 0
     private var timer: Timer?
 
     private init() {
@@ -36,7 +39,13 @@ final class Player: ObservableObject {
         Task { await Preparer.shared.trimCache() }
         Task { await refreshVolume() }
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.poll() }
+            Task { @MainActor in
+                guard let self else { return }
+                self.ticks += 1
+                // Volume can change on the speaker itself (knob, remote, its app) — keep re-reading it.
+                if self.ticks % 2 == 0 { await self.syncVolume() }
+                await self.poll()
+            }
         }
     }
 
@@ -130,19 +139,33 @@ final class Player: ObservableObject {
         Task { await run { try await Speaker.shared.stop() } }
     }
 
-    func volumeChanged() {
-        let v = Int(volume.rounded())
+    /// Called only by user input (slider, scroll); sends the value to the speaker.
+    func setVolume(_ value: Double) {
+        let v = min(maxVolume, max(0, value.rounded()))
+        volume = v
+        lastUserVolume = Date()
         volumeTask?.cancel()
         volumeTask = Task {
             try? await Task.sleep(nanoseconds: 150_000_000)
             guard !Task.isCancelled else { return }
-            await run { try await Speaker.shared.setVolume(v) }
+            await run { try await Speaker.shared.setVolume(Int(v)) }
+            lastUserVolume = Date()
         }
     }
 
     func refreshVolume() async {
         if let m = try? await Speaker.shared.maxVolume() { maxVolume = Double(m) }
-        if let v = try? await Speaker.shared.volume() { volume = Double(v) }
+        await syncVolume(force: true)
+    }
+
+    /// Reads the speaker volume unless the user is changing it right now.
+    private func syncVolume(force: Bool = false) async {
+        guard !volumeReading, force || Date().timeIntervalSince(lastUserVolume) > 2, Config.isConfigured else { return }
+        volumeReading = true
+        defer { volumeReading = false }
+        guard let v = try? await Speaker.shared.volume(),
+              force || Date().timeIntervalSince(lastUserVolume) > 2 else { return }
+        if Double(v) != volume { volume = Double(v) }
     }
 
     // MARK: Playback

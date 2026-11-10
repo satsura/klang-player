@@ -112,9 +112,8 @@ struct NowPlayingView: View {
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .frame(width: 14)
-            Slider(value: $player.volume, in: 0...player.maxVolume)
+            Slider(value: Binding(get: { player.volume }, set: { player.setVolume($0) }), in: 0...player.maxVolume)
                 .controlSize(.mini)
-                .onChange(of: player.volume) { player.volumeChanged() }
         }
         .help("Громкость колонки: \(Int(player.volume))")
     }
