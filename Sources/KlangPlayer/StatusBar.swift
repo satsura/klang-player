@@ -21,7 +21,8 @@ final class StatusBar: NSObject, NSPopoverDelegate {
     func start() {
         // A newly created item appears left of the ones before it: ⏭ ⏯ ⏮ first, the title last.
         for kind in [Control.next, .toggle, .previous] {
-            let it = NSStatusBar.system.statusItem(withLength: 24)
+            // Narrow items: the menu bar adds its own gap between items.
+            let it = NSStatusBar.system.statusItem(withLength: kind == .toggle ? 20 : 18)
             it.autosaveName = "KlangPlayer.button.\(kind)"
             it.button?.target = self
             it.button?.action = #selector(controlClicked(_:))
@@ -85,12 +86,17 @@ final class StatusBar: NSObject, NSPopoverDelegate {
             case .toggle: p.state == .playing ? String(localized: "Pause") : String(localized: "Play")
             case .next: String(localized: "Next")
             }
+            // Play/pause is the main control: larger; skip buttons smaller and lighter.
+            let config = kind == .toggle
+                ? NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+                : NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
             let img = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
-                .withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
+                .withSymbolConfiguration(config)
             img?.isTemplate = true
             if b.image?.name() != symbol { b.image = img; b.image?.setName(symbol) }
             b.toolTip = label
             b.appearsDisabled = kind == .next && p.upcoming.isEmpty
+            b.alphaValue = kind == .toggle ? 1 : 0.85
         }
     }
 
@@ -170,24 +176,43 @@ struct StatusBarView: View {
         return [t.artist, t.Name].filter { !$0.isEmpty }.joined(separator: " — ")
     }
 
+    private var speakerIcon: some View {
+        Image(systemName: player.state == .playing ? "hifispeaker.fill" : "hifispeaker")
+            .font(.system(size: 13))
+    }
+
     /// Longer titles scroll inside this width.
     private static let maxTitleWidth: CGFloat = 240
     private func width(of s: String) -> CGFloat {
-        let w = (s as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width
+        let w = (s as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width
         return min(ceil(w) + 1, Self.maxTitleWidth)
     }
 
     var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: player.state == .playing ? "hifispeaker.fill" : "hifispeaker")
-                .font(.system(size: 13))
+        HStack(spacing: 6) {
+            if title != nil, let art = player.current?.artURL(size: 64) {
+                // Small cover of the current album; the speaker icon until it loads.
+                AsyncImage(url: art) { phase in
+                    if let img = phase.image {
+                        img.resizable().aspectRatio(contentMode: .fill)
+                    } else {
+                        speakerIcon
+                    }
+                }
+                .id(art)
+                .frame(width: 18, height: 18)
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .opacity(player.state == .playing ? 1 : 0.7)
+            } else {
+                speakerIcon
+            }
             if let title {
-                Marquee(text: title, font: .system(size: 12), active: player.state == .playing)
+                Marquee(text: title, font: .system(size: 13), active: player.state == .playing)
                     .frame(width: width(of: title))
                     .opacity(player.state == .playing ? 1 : 0.6)
             }
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 4)
         .frame(maxHeight: .infinity)
         .fixedSize(horizontal: true, vertical: false)
         .allowsHitTesting(false)
