@@ -37,24 +37,24 @@ struct Album: Identifiable, Hashable, Decodable {
     }
 }
 
-struct UserItemData: Hashable, Decodable {
+struct UserItemData: Hashable, Codable {
     var IsFavorite: Bool?
     var PlayCount: Int?
 }
 
-struct MediaStream: Hashable, Decodable {
+struct MediaStream: Hashable, Codable {
     let `Type`: String?
     let Codec: String?
     let SampleRate: Int?
     let BitDepth: Int?
 }
 
-struct MediaSource: Hashable, Decodable {
+struct MediaSource: Hashable, Codable {
     let Container: String?
     let MediaStreams: [MediaStream]?
 }
 
-struct Track: Identifiable, Hashable, Decodable {
+struct Track: Identifiable, Hashable, Codable {
     let Id: String
     let Name: String
     let Album: String?

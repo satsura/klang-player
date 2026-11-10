@@ -35,6 +35,9 @@ final class Player: ObservableObject {
     private var volumeReading = false
     private var ticks = 0
     private var timer: Timer?
+    /// Position to continue from after the app restarts (applied when that track starts again).
+    private var resumeAt: (trackId: String, position: Double)?
+    private var savedSignature = ""
 
     private init() {
         FileServer.shared.start()
@@ -54,6 +57,7 @@ final class Player: ObservableObject {
                 self.ticks += 1
                 // Volume can change on the speaker itself (knob, remote, its app) — keep re-reading it.
                 if self.ticks % 2 == 0 { await self.syncVolume() }
+                if self.ticks % 5 == 0 { self.saveQueue() }
                 await self.poll()
             }
         }
@@ -209,6 +213,10 @@ final class Player: ObservableObject {
             outputLabel = label(mime)
             keepAwake(true)
             Reporter.shared.started(t, mime: mime, previousPosition: previousPosition)
+            if let r = resumeAt {
+                resumeAt = nil
+                if r.trackId == t.Id, r.position > 5, r.position < t.duration - 5 { seek(to: r.position) }
+            }
             await queueNext(gen)
         } catch {
             guard gen == generation else { return }
@@ -396,6 +404,41 @@ final class Player: ObservableObject {
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>\
         <res protocolInfo="http-get:*:\(mime):*" duration="\(hms(t.duration))">\(xmlEscape(url))</res></item></DIDL-Lite>
         """
+    }
+
+    // MARK: Saved queue
+
+    private struct SavedQueue: Codable {
+        var queue: [Track]
+        var index: Int
+        var position: Double
+    }
+
+    /// Stores queue, current track and position (called every few seconds and on quit).
+    func saveQueue() {
+        guard !Speaker.dryRun else { return }
+        let sig = "\(queue.count):\(index):\(Int(position)):\(current?.Id ?? "")"
+        guard sig != savedSignature else { return }
+        savedSignature = sig
+        let saved = SavedQueue(queue: queue, index: index, position: position)
+        UserDefaults.standard.set(try? JSONEncoder().encode(saved), forKey: "savedQueue")
+    }
+
+    /// Brings back the last queue after a restart, stopped at the saved position.
+    func restoreQueue() {
+        guard queue.isEmpty, let data = UserDefaults.standard.data(forKey: "savedQueue") else { return }
+        let s: SavedQueue
+        do { s = try JSONDecoder().decode(SavedQueue.self, from: data) } catch {
+            debugLog("restore queue: \(error)")
+            return
+        }
+        guard s.queue.indices.contains(s.index) else { return }
+        queue = s.queue
+        index = s.index
+        duration = s.queue[s.index].duration
+        position = s.position
+        state = .idle
+        resumeAt = (s.queue[s.index].Id, s.position)
     }
 
     /// Debug (--preview): shows a queue in the UI without touching the speaker.

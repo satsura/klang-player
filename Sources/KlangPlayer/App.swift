@@ -34,8 +34,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if args.contains("--dark") { NSApp.appearance = NSAppearance(named: .darkAqua) }
         if !args.contains("--discover") && !args.contains("--relocate") {
             Task { @MainActor in
-                _ = Player.shared
+                if !args.contains("--selftest") && !args.contains("--preview") { Player.shared.restoreQueue() }
                 StatusBar.shared.start()
+                NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+                    MainActor.assumeIsolated { Player.shared.saveQueue() }
+                }
                 // Refresh the speaker list and the current speaker's address in the background.
                 if !args.contains("--selftest") && !args.contains("--preview") {
                     Task { await Player.relocateSpeaker() }
