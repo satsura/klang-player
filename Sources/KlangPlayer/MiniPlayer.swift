@@ -97,7 +97,7 @@ struct MiniPlayerView: View {
                     .allowsHitTesting(false)
 
                 VStack(alignment: .leading, spacing: s * 0.025) {
-                    Text(player.current?.Name ?? "Ничего не играет")
+                    Text(player.current?.Name ?? String(localized: "Nothing playing"))
                         .font(.system(size: max(12, s * 0.055), weight: .semibold))
                         .lineLimit(1)
                     Text(player.current?.artist ?? " ")
@@ -142,10 +142,10 @@ struct MiniPlayerView: View {
         }
         .onHover { hover = $0 }
         .contextMenu {
-            Button(player.state == .playing ? "Пауза" : "Играть") { player.toggle() }
-            Button("Следующий") { player.next() }
+            Button(player.state == .playing ? LocalizedStringKey("Pause") : LocalizedStringKey("Play")) { player.toggle() }
+            Button("Next") { player.next() }
             Divider()
-            Button("Закрыть карточку", action: close)
+            Button("Close Card", action: close)
         }
     }
 }

@@ -29,10 +29,12 @@ final class Library: ObservableObject {
         do {
             let a = try await Emby.shared.albums()
             albums = Album.mergeCompilations(a).sorted {
+                // Compilations go last, the rest by artist and year.
+                if ($0.parts != nil) != ($1.parts != nil) { return $1.parts != nil }
                 let c = $0.artist.localizedStandardCompare($1.artist)
                 return c == .orderedSame ? ($0.ProductionYear ?? 0) < ($1.ProductionYear ?? 0) : c == .orderedAscending
             }
-            artists = Dictionary(grouping: a, by: { $0.artist.isEmpty ? "Без артиста" : $0.artist })
+            artists = Dictionary(grouping: a, by: { $0.artist.isEmpty ? String(localized: "Unknown artist") : $0.artist })
                 .map { Artist(name: $0.key, albums: $0.value.sorted { ($0.ProductionYear ?? 0) < ($1.ProductionYear ?? 0) }) }
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             roots = (try? await Emby.shared.musicLibraries()) ?? []

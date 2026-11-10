@@ -65,7 +65,7 @@ final class Integrations {
             let ti = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             ti.button?.target = MenuTarget.shared
             ti.button?.action = #selector(MenuTarget.card)
-            ti.button?.toolTip = "Показать карточку"
+            ti.button?.toolTip = String(localized: "Show card")
             titleItem = ti
         } else if !show, titleItem != nil {
             for i in [titleItem, prevItem, playItem, nextItem] { if let i { NSStatusBar.system.removeStatusItem(i) } }

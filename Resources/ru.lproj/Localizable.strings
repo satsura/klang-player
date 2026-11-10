@@ -1,0 +1,81 @@
+/* Errors */
+"Emby returned %lld" = "Emby ответил %lld";
+"Speaker: %@" = "Колонка: %@";
+"Can't find this Mac's address in the speaker's network" = "Не найден адрес Mac в сети колонки";
+"Set up the Emby server and the speaker in Settings" = "Укажи сервер Emby и колонку в настройках";
+"Invalid server address" = "Неверный адрес сервера";
+"Wrong username or password" = "Неверный логин или пароль";
+
+/* Durations */
+"%lld h %lld min" = "%lld ч %lld мин";
+"%lld min" = "%lld мин";
+
+/* Actions */
+"Play" = "Играть";
+"Pause" = "Пауза";
+"Next" = "Следующий";
+"Play Next" = "Играть далее";
+"Add to Queue" = "Добавить в очередь";
+"Remove from Queue" = "Убрать из очереди";
+"Shuffle" = "Вперемешку";
+"Play All" = "Играть всё";
+"Play Folder" = "Играть папку";
+"Refresh" = "Обновить";
+"Clear" = "Очистить";
+"Show" = "Показать";
+"Done" = "Готово";
+"Find" = "Найти";
+"Quit" = "Выйти";
+"Close Card" = "Закрыть карточку";
+"Show card" = "Показать карточку";
+
+/* Library */
+"Albums" = "Альбомы";
+"Artists" = "Артисты";
+"Folders" = "Папки";
+"Tracks" = "Треки";
+"Search" = "Поиск";
+"No albums" = "Альбомов нет";
+"No artists" = "Артистов нет";
+"No music libraries" = "Музыкальных библиотек нет";
+"Folder is empty" = "Папка пуста";
+"Nothing found" = "Ничего не найдено";
+"Loading…" = "Загрузка…";
+"Compilation" = "Сборник";
+"Unknown artist" = "Без артиста";
+
+/* Now playing */
+"Nothing playing" = "Ничего не играет";
+"preparing…" = "готовлю…";
+"Floating card" = "Карточка поверх окон";
+"Queue" = "Очередь";
+"Queue is empty" = "Очередь пуста";
+"Speaker volume: %lld" = "Громкость колонки: %lld";
+"Pick something to play below" = "Выбери музыку ниже";
+
+/* Settings */
+"Settings" = "Настройки";
+"Not set up" = "Не настроено";
+"Emby Server" = "Сервер Emby";
+"Address" = "Адрес";
+"Connected" = "Подключено";
+"Signed in as %@" = "Вход: %@";
+"Sign In" = "Войти";
+"Sign Out" = "Выйти";
+"User" = "Пользователь";
+"Emby user name" = "имя в Emby";
+"Password" = "Пароль";
+"Speaker" = "Колонка";
+"may not work" = "может не работать";
+"Supported: speakers built on Frontier Silicon (Loewe klang and others). Over the network they play AAC, not FLAC." = "Поддерживаются колонки на Frontier Silicon (Loewe klang и др.): по сети они играют AAC, но не FLAC.";
+"Launch at login" = "Запускать при входе";
+"Track and buttons in the menu bar" = "Название и кнопки в строке меню";
+"AAC cache: up to 3 GB" = "Кэш AAC: до 3 ГБ";
+"Language" = "Язык";
+"System" = "Как в системе";
+"Restart to apply the language" = "Перезапусти, чтобы сменить язык";
+"Restart" = "Перезапустить";
+
+/* Widget */
+"App is not running" = "Приложение не запущено";
+"What's playing on the speaker" = "Что играет на колонке";

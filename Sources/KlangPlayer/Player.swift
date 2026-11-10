@@ -290,7 +290,7 @@ final class Player: ObservableObject {
         if on, activity == nil {
             activity = ProcessInfo.processInfo.beginActivity(
                 options: [.idleSystemSleepDisabled, .suddenTerminationDisabled],
-                reason: "Музыка играет на колонке")
+                reason: "Playing music on the speaker")
         } else if !on, let a = activity {
             ProcessInfo.processInfo.endActivity(a)
             activity = nil

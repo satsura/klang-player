@@ -41,6 +41,20 @@ enum Config {
         return id
     }
 
+    /// "" = follow the system, otherwise "en" / "ru". Applied on next launch via AppleLanguages.
+    static var language: String {
+        get { (d.array(forKey: "AppleLanguages") as? [String])?.first.flatMap { d.object(forKey: "languageOverride") != nil ? $0 : nil } ?? "" }
+        set {
+            if newValue.isEmpty {
+                d.removeObject(forKey: "AppleLanguages")
+                d.removeObject(forKey: "languageOverride")
+            } else {
+                d.set([newValue], forKey: "AppleLanguages")
+                d.set(true, forKey: "languageOverride")
+            }
+        }
+    }
+
     static var isConfigured: Bool { !embyURL.isEmpty && !apiKey.isEmpty && !speakerIP.isEmpty }
 
     /// Cache limit for converted tracks.
@@ -57,10 +71,10 @@ enum PlayerError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .http(let c): return "Emby ответил \(c)"
-        case .speaker(let s): return "Колонка: \(s)"
-        case .noLocalIP: return "Не найден IP Mac в сети колонки"
-        case .notConfigured: return "Укажи сервер Emby и колонку в настройках"
+        case .http(let c): return String(localized: "Emby returned \(c)")
+        case .speaker(let s): return String(localized: "Speaker: \(s)")
+        case .noLocalIP: return String(localized: "Can't find this Mac's address in the speaker's network")
+        case .notConfigured: return String(localized: "Set up the Emby server and the speaker in Settings")
         case .login(let s): return s
         }
     }
@@ -106,5 +120,5 @@ func mmss(_ seconds: Double) -> String {
 
 func totalDuration(_ tracks: [Track]) -> String {
     let m = Int(tracks.reduce(0) { $0 + $1.duration } / 60)
-    return m >= 60 ? "\(m / 60) ч \(m % 60) мин" : "\(m) мин"
+    return m >= 60 ? String(localized: "\(m / 60) h \(m % 60) min") : String(localized: "\(m) min")
 }

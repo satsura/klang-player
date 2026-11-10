@@ -78,7 +78,7 @@ struct SmallView: View {
             Text(e.title.isEmpty ? "Klang Player" : e.title)
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(2)
-            Text(e.online ? (e.artist.isEmpty ? "Ничего не играет" : e.artist) : "Приложение не запущено")
+            Text(e.online ? (e.artist.isEmpty ? String(localized: "Nothing playing") : e.artist) : String(localized: "App is not running"))
                 .font(.system(size: 11))
                 .opacity(0.8)
                 .lineLimit(1)
@@ -112,7 +112,7 @@ struct MediumView: View {
                 Text(e.title.isEmpty ? "Klang Player" : e.title)
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(2)
-                Text(e.online ? (e.artist.isEmpty ? "Ничего не играет" : e.artist) : "Приложение не запущено")
+                Text(e.online ? (e.artist.isEmpty ? String(localized: "Nothing playing") : e.artist) : String(localized: "App is not running"))
                     .font(.system(size: 12))
                     .opacity(0.8)
                     .lineLimit(1)
@@ -157,7 +157,7 @@ struct KlangNowPlayingWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "KlangNowPlaying", provider: Provider()) { KlangWidgetView(entry: $0) }
             .configurationDisplayName("Klang Player")
-            .description("Что играет на колонке")
+            .description("What's playing on the speaker")
             .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

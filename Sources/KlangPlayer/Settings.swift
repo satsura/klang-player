@@ -19,19 +19,21 @@ struct SettingsView: View {
     @State private var loginItem = SMAppService.mainApp.status == .enabled
     @State private var loginItemError: String?
     @State private var menuBar = Integrations.showInMenuBar
+    @State private var language = Config.language
+    private let startLanguage = Config.language
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                group("Сервер Emby", icon: "server.rack") {
-                    field("Адрес", text: $server, prompt: "http://192.168.1.10:8096")
+                group("Emby Server", icon: "server.rack") {
+                    field("Address", text: $server, prompt: "http://192.168.1.10:8096")
                     if loggedIn {
                         HStack {
                             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                            Text(Config.userName.isEmpty ? "Подключено" : "Вход: \(Config.userName)")
+                            Text(Config.userName.isEmpty ? LocalizedStringKey("Connected") : LocalizedStringKey("Signed in as \(Config.userName)"))
                                 .font(.system(size: 12))
                             Spacer()
-                            Button("Выйти") {
+                            Button("Sign Out") {
                                 Config.apiKey = ""
                                 Config.userId = ""
                                 loggedIn = false
@@ -39,27 +41,27 @@ struct SettingsView: View {
                             .controlSize(.small)
                         }
                     } else {
-                        field("Пользователь", text: $user, prompt: "имя в Emby")
+                        field("User", text: $user, prompt: "Emby user name")
                         HStack {
-                            Text("Пароль").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 82, alignment: .leading)
+                            Text("Password").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 82, alignment: .leading)
                             SecureField("", text: $password).textFieldStyle(.roundedBorder).onSubmit(login)
                         }
                         HStack {
                             if let loginState { Text(loginState).font(.system(size: 11)).foregroundStyle(.red) }
                             Spacer()
                             if loggingIn { ProgressView().controlSize(.small) }
-                            Button("Войти", action: login)
+                            Button("Sign In", action: login)
                                 .controlSize(.small)
                                 .disabled(server.isEmpty || user.isEmpty || loggingIn)
                         }
                     }
                 }
 
-                group("Колонка", icon: "hifispeaker") {
+                group("Speaker", icon: "hifispeaker") {
                     HStack {
                         field("IP", text: $speakerIP, prompt: "192.168.1.20")
                         Button { Task { await discover() } } label: {
-                            if searching { ProgressView().controlSize(.small) } else { Text("Найти") }
+                            if searching { ProgressView().controlSize(.small) } else { Text("Find") }
                         }
                         .controlSize(.small)
                         .disabled(searching)
@@ -70,7 +72,7 @@ struct SettingsView: View {
                                 .foregroundStyle(s.ip == speakerIP ? Color.accentColor : .secondary)
                             VStack(alignment: .leading, spacing: 0) {
                                 Text(s.name).font(.system(size: 12))
-                                Text("\(s.manufacturer) · \(s.ip)\(s.isSupported ? "" : " · может не работать")")
+                                Text(verbatim: "\(s.manufacturer) · \(s.ip)" + (s.isSupported ? "" : " · " + String(localized: "may not work")))
                                     .font(.system(size: 10)).foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -81,13 +83,13 @@ struct SettingsView: View {
                             Config.speakerName = s.name
                         }
                     }
-                    Text("Поддерживаются колонки на Frontier Silicon (Loewe klang и др.): они играют AAC по сети, но не FLAC.")
+                    Text("Supported: speakers built on Frontier Silicon (Loewe klang and others). Over the network they play AAC, not FLAC.")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 group("Mac", icon: "laptopcomputer") {
-                    Toggle("Запускать при входе", isOn: $loginItem)
+                    Toggle("Launch at login", isOn: $loginItem)
                         .font(.system(size: 12))
                         .onChange(of: loginItem) {
                             do {
@@ -98,20 +100,39 @@ struct SettingsView: View {
                             }
                         }
                     if let loginItemError { Text(loginItemError).font(.system(size: 10)).foregroundStyle(.red) }
-                    Toggle("Название и кнопки в строке меню", isOn: $menuBar)
+                    Toggle("Track and buttons in the menu bar", isOn: $menuBar)
                         .font(.system(size: 12))
                         .onChange(of: menuBar) { Integrations.showInMenuBar = menuBar }
                     HStack {
-                        Text("Кэш AAC: до 3 ГБ").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text("Language").font(.system(size: 12))
                         Spacer()
-                        Button("Показать") { NSWorkspace.shared.open(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("KlangPlayer")) }
+                        Picker("", selection: $language) {
+                            Text("System").tag("")
+                            Text(verbatim: "English").tag("en")
+                            Text(verbatim: "Русский").tag("ru")
+                        }
+                        .labelsHidden()
+                        .frame(width: 150)
+                        .onChange(of: language) { Config.language = language }
+                    }
+                    if language != startLanguage {
+                        HStack {
+                            Text("Restart to apply the language").font(.system(size: 11)).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Restart") { relaunch() }.controlSize(.small)
+                        }
+                    }
+                    HStack {
+                        Text("AAC cache: up to 3 GB").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Show") { NSWorkspace.shared.open(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("KlangPlayer")) }
                             .controlSize(.small)
                     }
                 }
 
                 HStack {
                     Spacer()
-                    Button("Готово", action: save)
+                    Button("Done", action: save)
                         .keyboardShortcut(.defaultAction)
                         .disabled(!loggedIn || speakerIP.isEmpty)
                 }
@@ -121,7 +142,7 @@ struct SettingsView: View {
         .task { if speakers.isEmpty && Config.speakerIP.isEmpty { await discover() } }
     }
 
-    private func group<C: View>(_ title: String, icon: String, @ViewBuilder _ content: () -> C) -> some View {
+    private func group<C: View>(_ title: LocalizedStringKey, icon: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: icon).font(.system(size: 12, weight: .semibold))
             VStack(alignment: .leading, spacing: 8) { content() }
@@ -130,7 +151,7 @@ struct SettingsView: View {
         }
     }
 
-    private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {
+    private func field(_ label: LocalizedStringKey, text: Binding<String>, prompt: LocalizedStringKey) -> some View {
         HStack {
             Text(label).font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 82, alignment: .leading)
             TextField("", text: text, prompt: Text(prompt)).textFieldStyle(.roundedBorder)
@@ -154,6 +175,17 @@ struct SettingsView: View {
                 loginState = error.localizedDescription
             }
             loggingIn = false
+        }
+    }
+
+    private func relaunch() {
+        let cfg = NSWorkspace.OpenConfiguration()
+        cfg.createsNewApplicationInstance = true
+        let url = Bundle.main.bundleURL
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            NSWorkspace.shared.openApplication(at: url, configuration: cfg) { _, _ in
+                DispatchQueue.main.async { NSApp.terminate(nil) }
+            }
         }
     }
 

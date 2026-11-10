@@ -80,10 +80,11 @@ struct NavHeader: View {
 }
 
 struct SectionTitle: View {
-    let text: String
-    init(_ t: String) { text = t }
+    let text: LocalizedStringKey
+    init(_ t: LocalizedStringKey) { text = t }
     var body: some View {
-        Text(text.uppercased())
+        Text(text)
+            .textCase(.uppercase)
             .font(.system(size: 10, weight: .semibold))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -96,7 +97,7 @@ struct SectionTitle: View {
 struct EmptyState: View {
     let icon: String
     let text: String
-    var action: (title: String, run: () -> Void)? = nil
+    var action: (title: LocalizedStringKey, run: () -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 10) {
@@ -167,12 +168,12 @@ struct TrackRow: View {
         .onHover { hover = $0 }
         .onTapGesture(count: 1, perform: play)
         .contextMenu {
-            Button("Играть") { play() }
-            Button("Играть далее") { player.playNext([track]) }
-            Button("Добавить в очередь") { player.enqueue([track]) }
+            Button("Play") { play() }
+            Button("Play Next") { player.playNext([track]) }
+            Button("Add to Queue") { player.enqueue([track]) }
             if let onRemove {
                 Divider()
-                Button("Убрать из очереди", action: onRemove)
+                Button("Remove from Queue", action: onRemove)
             }
         }
     }

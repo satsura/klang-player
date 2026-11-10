@@ -1,10 +1,15 @@
 import SwiftUI
 
 enum Tab: String, CaseIterable, Identifiable {
-    case albums = "Альбомы"
-    case artists = "Артисты"
-    case folders = "Папки"
-    var id: String { rawValue }
+    case albums, artists, folders
+    var id: Self { self }
+    var title: LocalizedStringKey {
+        switch self {
+        case .albums: "Albums"
+        case .artists: "Artists"
+        case .folders: "Folders"
+        }
+    }
 }
 
 enum Route: Hashable {
@@ -49,7 +54,7 @@ struct ContentView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Picker("", selection: $tab) {
-                    ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(Tab.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -102,7 +107,7 @@ struct ContentView: View {
         HStack(spacing: 10) {
             Button { overlay = overlay == .settings ? nil : .settings } label: { Image(systemName: "gearshape") }
                 .buttonStyle(.borderless)
-                .help("Настройки")
+                .help("Settings")
             if lib.loading {
                 ProgressView().controlSize(.mini)
             }
@@ -114,16 +119,16 @@ struct ContentView: View {
             Spacer()
             Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }
                 .buttonStyle(.borderless)
-                .help("Выйти")
+                .help("Quit")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
     }
 
     private var speakerLine: String {
-        guard Config.isConfigured else { return "Не настроено" }
+        guard Config.isConfigured else { return String(localized: "Not set up") }
         let name = Config.speakerName.isEmpty ? Config.speakerIP : Config.speakerName
-        return "\(name) · \(lib.albums.count) альбомов"
+        return "\(name) · " + String(localized: "\(lib.albums.count) albums")
     }
 }
 
@@ -132,7 +137,7 @@ struct SearchField: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.secondary)
-            TextField("Поиск", text: $text)
+            TextField("Search", text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
             if !text.isEmpty {
@@ -160,8 +165,8 @@ struct AlbumsGrid: View {
         if lib.loading && albums.isEmpty {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if albums.isEmpty {
-            EmptyState(icon: "square.stack", text: lib.error ?? "Альбомов нет",
-                       action: ("Обновить", { Task { await lib.load() } }))
+            EmptyState(icon: "square.stack", text: lib.error ?? String(localized: "No albums"),
+                       action: ("Refresh", { Task { await lib.load() } }))
         } else {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 14) {
@@ -212,10 +217,10 @@ struct AlbumTile: View {
         .onHover { hover = $0 }
         .onTapGesture(perform: open)
         .contextMenu {
-            Button("Играть") { Task { if let t = try? await lib.tracks(for: album) { player.play(t) } } }
-            Button("Вперемешку") { Task { if let t = try? await lib.tracks(for: album) { player.play(t.shuffled()) } } }
-            Button("Играть далее") { Task { if let t = try? await lib.tracks(for: album) { player.playNext(t) } } }
-            Button("Добавить в очередь") { Task { if let t = try? await lib.tracks(for: album) { player.enqueue(t) } } }
+            Button("Play") { Task { if let t = try? await lib.tracks(for: album) { player.play(t) } } }
+            Button("Shuffle") { Task { if let t = try? await lib.tracks(for: album) { player.play(t.shuffled()) } } }
+            Button("Play Next") { Task { if let t = try? await lib.tracks(for: album) { player.playNext(t) } } }
+            Button("Add to Queue") { Task { if let t = try? await lib.tracks(for: album) { player.enqueue(t) } } }
         }
     }
 }
@@ -237,7 +242,7 @@ struct AlbumView: View {
                         cover: Emby.shared.imageURL(itemId: album.imageItemId, tag: album.imageTag, size: 300),
                         title: album.Name,
                         subtitle: [album.artist, album.ProductionYear.map(String.init) ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
-                        detail: tracks.isEmpty ? nil : "\(tracks.count) треков · \(totalDuration(tracks)) · \(tracks.first?.sourceLabel ?? "")",
+                        detail: tracks.isEmpty ? nil : String(localized: "\(tracks.count) tracks") + " · \(totalDuration(tracks)) · \(tracks.first?.sourceLabel ?? "")",
                         tracks: tracks)
                     if let error { Text(error).foregroundStyle(.secondary).padding() }
                     LazyVStack(spacing: 0) {
@@ -280,11 +285,11 @@ struct CollectionHeader: View {
                 Spacer(minLength: 6)
                 HStack(spacing: 6) {
                     Button { player.play(tracks) } label: {
-                        Label("Играть", systemImage: "play.fill").font(.system(size: 11, weight: .semibold))
+                        Label("Play", systemImage: "play.fill").font(.system(size: 11, weight: .semibold))
                     }
                     .buttonStyle(.borderedProminent)
                     Button { player.play(tracks.shuffled()) } label: {
-                        Label("Вперемешку", systemImage: "shuffle").font(.system(size: 11))
+                        Label("Shuffle", systemImage: "shuffle").font(.system(size: 11))
                     }
                     .buttonStyle(.bordered)
                 }
@@ -308,7 +313,7 @@ struct ArtistsList: View {
 
     var body: some View {
         if lib.artists.isEmpty {
-            EmptyState(icon: "music.mic", text: lib.loading ? "Загрузка…" : "Артистов нет")
+            EmptyState(icon: "music.mic", text: lib.loading ? String(localized: "Loading…") : String(localized: "No artists"))
         } else {
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -330,7 +335,7 @@ struct ArtistRow: View {
                   size: 34, radius: 17, placeholder: "music.mic")
             VStack(alignment: .leading, spacing: 1) {
                 Text(artist.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                Text(artist.albums.count == 1 ? "1 альбом" : "\(artist.albums.count) альбомов")
+                Text("\(artist.albums.count) albums")
                     .font(.system(size: 10.5)).foregroundStyle(.secondary)
             }
             Spacer()
@@ -355,11 +360,11 @@ struct ArtistView: View {
             NavHeader(title: artist.name, back: back)
             HStack(spacing: 6) {
                 Button { Task { player.play(await allTracks()) } } label: {
-                    Label("Играть всё", systemImage: "play.fill").font(.system(size: 11, weight: .semibold))
+                    Label("Play All", systemImage: "play.fill").font(.system(size: 11, weight: .semibold))
                 }
                 .buttonStyle(.borderedProminent)
                 Button { Task { player.play(await allTracks().shuffled()) } } label: {
-                    Label("Вперемешку", systemImage: "shuffle").font(.system(size: 11))
+                    Label("Shuffle", systemImage: "shuffle").font(.system(size: 11))
                 }
                 .buttonStyle(.bordered)
                 Spacer()
@@ -387,7 +392,7 @@ struct FolderRoot: View {
         if lib.roots.count == 1, let root = lib.roots.first {
             FolderView(folder: root, back: nil, open: open)
         } else if lib.roots.isEmpty {
-            EmptyState(icon: "folder", text: lib.loading ? "Загрузка…" : "Музыкальных библиотек нет")
+            EmptyState(icon: "folder", text: lib.loading ? String(localized: "Loading…") : String(localized: "No music libraries"))
         } else {
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -421,21 +426,21 @@ struct FolderView: View {
                             cover: Emby.shared.imageURL(itemId: tracks.first?.AlbumId, tag: tracks.first?.AlbumPrimaryImageTag, size: 300),
                             title: folder.Name,
                             subtitle: tracks.first?.AlbumArtist ?? "",
-                            detail: "\(tracks.count) файлов · \(totalDuration(tracks)) · \(tracks.first?.sourceLabel ?? "")",
+                            detail: String(localized: "\(tracks.count) files") + " · \(totalDuration(tracks)) · \(tracks.first?.sourceLabel ?? "")",
                             tracks: tracks,
                             placeholder: "folder")
                     } else if !folders.isEmpty {
                         HStack(spacing: 6) {
                             Button { Task { await playAll(shuffle: false) } } label: {
-                                Label("Играть папку", systemImage: "play.fill").font(.system(size: 11, weight: .semibold))
+                                Label("Play Folder", systemImage: "play.fill").font(.system(size: 11, weight: .semibold))
                             }
                             .buttonStyle(.borderedProminent)
                             Button { Task { await playAll(shuffle: true) } } label: {
-                                Label("Вперемешку", systemImage: "shuffle").font(.system(size: 11))
+                                Label("Shuffle", systemImage: "shuffle").font(.system(size: 11))
                             }
                             .buttonStyle(.bordered)
                             Spacer()
-                            Text("\(folders.count) папок").font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                            Text("\(folders.count) folders").font(.system(size: 10.5)).foregroundStyle(.tertiary)
                         }
                         .controlSize(.small)
                         .padding(.horizontal, 14)
@@ -452,7 +457,7 @@ struct FolderView: View {
                     .padding(.bottom, 10)
 
                     if loaded && folders.isEmpty && tracks.isEmpty {
-                        EmptyState(icon: "folder", text: error ?? "Папка пуста")
+                        EmptyState(icon: "folder", text: error ?? String(localized: "Folder is empty"))
                     } else if !loaded {
                         ProgressView().padding(30)
                     }
@@ -501,7 +506,7 @@ struct FolderRow: View {
                     Image(systemName: "play.circle.fill").font(.system(size: 16))
                 }
                 .buttonStyle(.borderless)
-                .help("Играть папку")
+                .help("Play Folder")
             } else if let n = folder.ChildCount {
                 Text("\(n)").font(.system(size: 10.5).monospacedDigit()).foregroundStyle(.tertiary)
             }
@@ -513,9 +518,9 @@ struct FolderRow: View {
         .onHover { hover = $0 }
         .onTapGesture(perform: open)
         .contextMenu {
-            Button("Играть папку") { Task { await play(shuffle: false) } }
-            Button("Вперемешку") { Task { await play(shuffle: true) } }
-            Button("Добавить в очередь") {
+            Button("Play Folder") { Task { await play(shuffle: false) } }
+            Button("Shuffle") { Task { await play(shuffle: true) } }
+            Button("Add to Queue") {
                 Task { if let t = try? await Emby.shared.allTracks(under: folder.Id) { player.enqueue(t) } }
             }
         }
@@ -541,11 +546,11 @@ struct SearchResultsView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if !artists.isEmpty {
-                    SectionTitle("Артисты")
+                    SectionTitle("Artists")
                     ForEach(artists.prefix(5)) { a in ArtistRow(artist: a) { open(.artist(a)) } }
                 }
                 if !albums.isEmpty {
-                    SectionTitle("Альбомы")
+                    SectionTitle("Albums")
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(alignment: .top, spacing: 12) {
                             ForEach(albums) { a in AlbumTile(album: a) { open(.album(a)) } }
@@ -554,13 +559,13 @@ struct SearchResultsView: View {
                     }
                 }
                 if !lib.searchResults.isEmpty {
-                    SectionTitle("Треки")
+                    SectionTitle("Tracks")
                     ForEach(Array(lib.searchResults.enumerated()), id: \.element.id) { i, t in
                         TrackRow(track: t, showArtist: true, showCover: true) { player.play(lib.searchResults, at: i) }
                     }
                 }
                 if albums.isEmpty && artists.isEmpty && lib.searchResults.isEmpty {
-                    EmptyState(icon: "magnifyingglass", text: "Ничего не найдено")
+                    EmptyState(icon: "magnifyingglass", text: String(localized: "Nothing found"))
                 }
             }
             .padding(.bottom, 10)

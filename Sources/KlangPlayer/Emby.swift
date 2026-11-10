@@ -11,7 +11,7 @@ struct Album: Identifiable, Hashable, Decodable {
     var coverId: String? = nil
 
     var id: String { Id }
-    var artist: String { parts != nil ? "Сборник" : AlbumArtist ?? "" }
+    var artist: String { parts != nil ? String(localized: "Compilation") : AlbumArtist ?? "" }
     var imageTag: String? { ImageTags?["Primary"] }
     var imageItemId: String { coverId ?? Id }
 
@@ -25,7 +25,7 @@ struct Album: Identifiable, Hashable, Decodable {
             if g.count >= 3, Set(g.map(\.artist)).count >= 3 {
                 done.insert(a.Name)
                 let withCover = g.first { $0.imageTag != nil }
-                out.append(Album(Id: "compilation:" + a.Name, Name: a.Name, AlbumArtist: "Сборник",
+                out.append(Album(Id: "compilation:" + a.Name, Name: a.Name, AlbumArtist: nil,
                                  ProductionYear: g.compactMap(\.ProductionYear).min(),
                                  ImageTags: withCover?.ImageTags, parts: g, coverId: withCover?.Id))
             } else {
@@ -139,7 +139,7 @@ final class Emby {
 
     /// Logs in with username/password, returns access token and user id.
     func login(server: String, user: String, password: String) async throws -> (token: String, userId: String) {
-        guard let u = URL(string: base(server) + "/Users/AuthenticateByName") else { throw PlayerError.login("Неверный адрес сервера") }
+        guard let u = URL(string: base(server) + "/Users/AuthenticateByName") else { throw PlayerError.login(String(localized: "Invalid server address")) }
         var r = URLRequest(url: u)
         r.httpMethod = "POST"
         r.timeoutInterval = 15
@@ -150,7 +150,7 @@ final class Emby {
         r.httpBody = try JSONSerialization.data(withJSONObject: ["Username": user, "Pw": password])
         let (data, resp) = try await URLSession.shared.data(for: r)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        guard code == 200 else { throw PlayerError.login(code == 401 ? "Неверный логин или пароль" : "Emby ответил \(code)") }
+        guard code == 200 else { throw PlayerError.login(code == 401 ? String(localized: "Wrong username or password") : String(localized: "Emby returned \(code)")) }
         let a = try JSONDecoder().decode(AuthResponse.self, from: data)
         return (a.AccessToken, a.User.Id)
     }

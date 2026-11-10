@@ -15,7 +15,7 @@ struct NowPlayingView: View {
                 Cover(url: art, size: 76, radius: 8, placeholder: "hifispeaker")
                     .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(player.current?.Name ?? "Ничего не играет")
+                    Text(player.current?.Name ?? String(localized: "Nothing playing"))
                         .font(.system(size: 14, weight: .semibold))
                         .lineLimit(2)
                     Text(subtitle)
@@ -25,7 +25,7 @@ struct NowPlayingView: View {
                     HStack(spacing: 5) {
                         if player.state == .preparing {
                             ProgressView().controlSize(.mini)
-                            Text("готовлю…").font(.system(size: 10)).foregroundStyle(.secondary)
+                            Text("preparing…").font(.system(size: 10)).foregroundStyle(.secondary)
                         } else if let t = player.current {
                             Badge(text: t.sourceLabel)
                             if let o = player.outputLabel {
@@ -78,14 +78,14 @@ struct NowPlayingView: View {
                 Spacer()
                 HStack(spacing: 12) {
                     Button { MiniPlayer.shared.toggle() } label: { Image(systemName: "pip") }
-                        .help("Карточка поверх окон")
+                        .help("Floating card")
                     Button(action: showQueue) {
                         HStack(spacing: 3) {
                             Image(systemName: "list.bullet")
                             if !player.upcoming.isEmpty { Text("\(player.upcoming.count)").font(.system(size: 10).monospacedDigit()) }
                         }
                     }
-                    .help("Очередь")
+                    .help("Queue")
                 }
                 .buttonStyle(.borderless)
                 .frame(width: 110, alignment: .trailing)
@@ -115,12 +115,12 @@ struct NowPlayingView: View {
             Slider(value: Binding(get: { player.volume }, set: { player.setVolume($0) }), in: 0...player.maxVolume)
                 .controlSize(.mini)
         }
-        .help("Громкость колонки: \(Int(player.volume))")
+        .help("Speaker volume: \(Int(player.volume))")
     }
 
     private var subtitle: String {
         guard let t = player.current else {
-            return Config.speakerName.isEmpty ? "Выбери музыку ниже" : Config.speakerName
+            return Config.speakerName.isEmpty ? String(localized: "Pick something to play below") : Config.speakerName
         }
         return [t.artist, t.Album ?? ""].filter { !$0.isEmpty }.joined(separator: " — ")
     }
@@ -137,10 +137,10 @@ struct QueueView: View {
                     Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold))
                 }
                 .buttonStyle(.borderless)
-                Text("Очередь").font(.system(size: 12, weight: .semibold))
+                Text("Queue").font(.system(size: 12, weight: .semibold))
                 Spacer()
                 if !player.upcoming.isEmpty {
-                    Button("Очистить") { player.clearUpcoming() }
+                    Button("Clear") { player.clearUpcoming() }
                         .buttonStyle(.borderless)
                         .font(.system(size: 11))
                 }
@@ -149,7 +149,7 @@ struct QueueView: View {
             .padding(.vertical, 8)
             Divider()
             if player.queue.isEmpty {
-                EmptyState(icon: "list.bullet", text: "Очередь пуста")
+                EmptyState(icon: "list.bullet", text: String(localized: "Queue is empty"))
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {

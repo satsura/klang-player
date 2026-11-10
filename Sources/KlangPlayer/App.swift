@@ -69,8 +69,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 w.setFrameTopLeftPoint(NSPoint(x: x, y: top - y))
                 w.title = "Klang Player"
                 w.level = .floating
-                w.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
+                if args.contains("--activate") {
+                    w.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                } else {
+                    w.orderFrontRegardless() // don't take keyboard focus from the user
+                }
                 self.window = w
             }
         }
