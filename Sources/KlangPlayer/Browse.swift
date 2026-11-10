@@ -328,7 +328,7 @@ struct AlbumView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     CollectionHeader(
-                        cover: Emby.shared.imageURL(itemId: album.imageItemId, tag: album.imageTag, size: 300),
+                        cover: Emby.shared.imageURL(itemId: album.imageItemId, tag: album.imageTag, size: 300) ?? tracks.first?.artURL(size: 300),
                         title: album.Name,
                         subtitle: [album.artist, album.ProductionYear.map(String.init) ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
                         detail: tracks.isEmpty ? nil : String(localized: "\(tracks.count) tracks") + " · \(totalDuration(tracks)) · \(tracks.first?.sourceLabel ?? "")",
@@ -525,7 +525,7 @@ struct FolderView: View {
                 VStack(spacing: 0) {
                     if !tracks.isEmpty {
                         CollectionHeader(
-                            cover: Emby.shared.imageURL(itemId: tracks.first?.AlbumId, tag: tracks.first?.AlbumPrimaryImageTag, size: 300),
+                            cover: Emby.shared.imageURL(itemId: folder.Id, tag: folder.imageTag, size: 300) ?? tracks.first?.artURL(size: 300),
                             title: folder.Name,
                             subtitle: tracks.first?.AlbumArtist ?? "",
                             detail: String(localized: "\(tracks.count) files") + " · \(totalDuration(tracks)) · \(tracks.first?.sourceLabel ?? "")",
