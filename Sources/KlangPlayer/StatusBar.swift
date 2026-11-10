@@ -2,24 +2,43 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// The app's single menu bar item: speaker icon + current track + ⏮ ⏯ ⏭.
-/// Clicking the icon/title opens the main window (a popover); right click shows a menu.
+/// Menu bar: the title item (speaker icon + current track) opens the main window (a popover),
+/// right click shows a menu; ⏮ ⏯ ⏭ are separate items next to it. They have to be separate:
+/// macOS reports a click on a menu bar item without the point inside it, so one item can't
+/// hold several buttons.
 @MainActor
 final class StatusBar: NSObject, NSPopoverDelegate {
     static let shared = StatusBar()
 
-    private var item: NSStatusItem?
-    private var host: NSHostingView<StatusBarView>?
+    private var titleItem: NSStatusItem?
+    private var controls: [(item: NSStatusItem, kind: Control)] = []
+    private var host: ClickThroughHostingView<StatusBarView>?
     private let popover = NSPopover()
     private var bag = Set<AnyCancellable>()
 
-    func start() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.autosaveName = "KlangPlayerMain"
-        self.item = item
-        guard let button = item.button else { return }
+    private enum Control { case previous, toggle, next }
 
-        let host = NSHostingView(rootView: StatusBarView())
+    func start() {
+        // A newly created item appears left of the ones before it: ⏭ ⏯ ⏮ first, the title last.
+        for kind in [Control.next, .toggle, .previous] {
+            let it = NSStatusBar.system.statusItem(withLength: 24)
+            it.autosaveName = "KlangPlayer.button.\(kind)"
+            it.button?.target = self
+            it.button?.action = #selector(controlClicked(_:))
+            it.button?.imageScaling = .scaleNone
+            controls.append((it, kind))
+        }
+
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.autosaveName = "KlangPlayer.nowPlaying"
+        titleItem = item
+        guard let button = item.button else { return }
+        button.target = self
+        button.action = #selector(titleClicked(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+
+        // Draws only; the click goes to the status bar button underneath.
+        let host = ClickThroughHostingView(rootView: StatusBarView())
         host.translatesAutoresizingMaskIntoConstraints = false
         button.addSubview(host)
         NSLayoutConstraint.activate([
@@ -29,6 +48,7 @@ final class StatusBar: NSObject, NSPopoverDelegate {
             host.bottomAnchor.constraint(equalTo: button.bottomAnchor),
         ])
         self.host = host
+
 
         popover.behavior = .transient
         popover.animates = false
@@ -43,15 +63,39 @@ final class StatusBar: NSObject, NSPopoverDelegate {
         resize()
     }
 
-    /// Fits the item width to the SwiftUI content.
+    /// Fits the title item to its content and updates the control items.
     func resize() {
         guard let host else { return }
         host.invalidateIntrinsicContentSize()
-        item?.length = max(24, host.fittingSize.width)
+        titleItem?.length = max(24, host.fittingSize.width)
+
+        let p = Player.shared
+        let show = StatusBarView.showsTrack
+        for (it, kind) in controls {
+            it.isVisible = show
+            guard show, let b = it.button else { continue }
+            let symbol: String
+            switch kind {
+            case .previous: symbol = "backward.fill"
+            case .toggle: symbol = p.state == .playing || p.state == .preparing ? "pause.fill" : "play.fill"
+            case .next: symbol = "forward.fill"
+            }
+            let label = switch kind {
+            case .previous: String(localized: "Previous")
+            case .toggle: p.state == .playing ? String(localized: "Pause") : String(localized: "Play")
+            case .next: String(localized: "Next")
+            }
+            let img = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
+                .withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
+            img?.isTemplate = true
+            if b.image?.name() != symbol { b.image = img; b.image?.setName(symbol) }
+            b.toolTip = label
+            b.appearsDisabled = kind == .next && p.upcoming.isEmpty
+        }
     }
 
     func togglePopover() {
-        guard let button = item?.button else { return }
+        guard let button = titleItem?.button else { return }
         if popover.isShown {
             popover.performClose(nil)
         } else {
@@ -62,11 +106,64 @@ final class StatusBar: NSObject, NSPopoverDelegate {
     }
 
     func showPopover() { if !popover.isShown { togglePopover() } }
+
+    @objc private func titleClicked(_ sender: NSStatusBarButton) {
+        let e = NSApp.currentEvent
+        if e?.type == .rightMouseUp || e?.modifierFlags.contains(.control) == true {
+            showMenu(sender)
+        } else {
+            togglePopover()
+        }
+    }
+
+    @objc private func controlClicked(_ sender: NSStatusBarButton) {
+        guard let kind = controls.first(where: { $0.item.button === sender })?.kind else { return }
+        let p = Player.shared
+        switch kind {
+        case .previous: p.previous()
+        case .toggle: p.toggle()
+        case .next: p.next()
+        }
+    }
+
+    private func showMenu(_ button: NSStatusBarButton) {
+        let menu = NSMenu()
+        menu.addItem(MenuAction(title: String(localized: "Open Klang Player")) { [weak self] in self?.showPopover() })
+        menu.addItem(MenuAction(title: MiniPlayer.shared.isVisible ? String(localized: "Close Card") : String(localized: "Show card")) {
+            MiniPlayer.shared.toggle()
+        })
+        menu.addItem(.separator())
+        menu.addItem(MenuAction(title: String(localized: "Quit")) { NSApp.terminate(nil) })
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
+    }
 }
 
+/// Draws SwiftUI content but lets every click fall through to the view below (the status bar button).
+final class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// Menu item that runs a closure.
+private final class MenuAction: NSMenuItem {
+    private let run: () -> Void
+    init(title: String, action: @escaping () -> Void) {
+        run = action
+        super.init(title: title, action: #selector(fire), keyEquivalent: "")
+        target = self
+    }
+    required init(coder: NSCoder) { fatalError() }
+    @objc private func fire() { run() }
+}
+
+/// Title item content: speaker icon and the current track (scrolls when long).
 struct StatusBarView: View {
     @ObservedObject var player = Player.shared
     @AppStorage("showInMenuBar") private var showTrack = true
+
+    /// Whether the track and the ⏮ ⏯ ⏭ items are shown.
+    static var showsTrack: Bool {
+        (UserDefaults.standard.object(forKey: "showInMenuBar") as? Bool ?? true) && Player.shared.current != nil
+    }
 
     private var title: String? {
         guard showTrack, let t = player.current else { return nil }
@@ -81,44 +178,18 @@ struct StatusBarView: View {
     }
 
     var body: some View {
-        HStack(spacing: 2) {
-            HStack(spacing: 5) {
-                Image(systemName: player.state == .playing ? "hifispeaker.fill" : "hifispeaker")
-                    .font(.system(size: 13))
-                if let title {
-                    Marquee(text: title, font: .system(size: 12), active: player.state == .playing)
-                        .frame(width: width(of: title))
-                        .opacity(player.state == .playing ? 1 : 0.6)
-                }
-            }
-            .padding(.horizontal, 6)
-            .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .onTapGesture { StatusBar.shared.togglePopover() }
-
-            if title != nil {
-                Group {
-                    Button { player.previous() } label: { Image(systemName: "backward.fill") }
-                    Button { player.toggle() } label: {
-                        Image(systemName: player.state == .playing || player.state == .preparing ? "pause.fill" : "play.fill")
-                    }
-                    Button { player.next() } label: { Image(systemName: "forward.fill") }
-                        .opacity(player.upcoming.isEmpty ? 0.35 : 1)
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .medium))
-                .frame(width: 20)
-                .frame(maxHeight: .infinity)
-                .contentShape(Rectangle())
+        HStack(spacing: 5) {
+            Image(systemName: player.state == .playing ? "hifispeaker.fill" : "hifispeaker")
+                .font(.system(size: 13))
+            if let title {
+                Marquee(text: title, font: .system(size: 12), active: player.state == .playing)
+                    .frame(width: width(of: title))
+                    .opacity(player.state == .playing ? 1 : 0.6)
             }
         }
-        .padding(.trailing, title != nil ? 4 : 0)
+        .padding(.horizontal, 6)
+        .frame(maxHeight: .infinity)
         .fixedSize(horizontal: true, vertical: false)
-        .contextMenu {
-            Button("Open Klang Player") { StatusBar.shared.showPopover() }
-            Button(MiniPlayer.shared.isVisible ? LocalizedStringKey("Close Card") : LocalizedStringKey("Show card")) { MiniPlayer.shared.toggle() }
-            Divider()
-            Button("Quit") { NSApp.terminate(nil) }
-        }
+        .allowsHitTesting(false)
     }
 }

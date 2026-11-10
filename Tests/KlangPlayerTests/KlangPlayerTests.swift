@@ -144,6 +144,32 @@ final class FileServerTests: XCTestCase {
         let (_, r404) = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(port)/t/missing.m4a")!)
         XCTAssertEqual((r404 as? HTTPURLResponse)?.statusCode, 404)
     }
+
+    /// After a restart the speaker may ask for a converted file the server hasn't published yet.
+    func testCachedFilesServedByNameOnly() async throws {
+        let server = FileServer()
+        server.start()
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("KlangPlayer", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let name = "test\(Int.random(in: 100000...999999))"
+        let file = dir.appendingPathComponent("\(name).m4a")
+        try Data("audio".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        func code(_ path: String) async throws -> Int {
+            let (_, r) = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(server.port)\(path)")!)
+            return (r as? HTTPURLResponse)?.statusCode ?? 0
+        }
+        let ok = try await code("/t/\(name).m4a")
+        XCTAssertEqual(ok, 200)
+        let wrongExt = try await code("/t/\(name).txt")
+        XCTAssertEqual(wrongExt, 404)
+        let traversal = try await code("/t/..%2F..%2FPreferences.m4a")
+        XCTAssertEqual(traversal, 404)
+        let debugLog = try await code("/t/debug.log")
+        XCTAssertEqual(debugLog, 404)
+    }
 }
 
 /// The local API must answer this Mac's own clients but not web pages open in a browser.
@@ -201,3 +227,4 @@ final class LocalAPIAccessTests: XCTestCase {
         XCTAssertFalse(constantTimeEqual("abc", "abcd"))
     }
 }
+

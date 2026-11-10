@@ -555,6 +555,43 @@ final class Player: ObservableObject {
         resumeAt = (s.queue[s.index].Id, pos)
     }
 
+    /// After an app restart the speaker may still be playing a track of the saved queue:
+    /// pick it up (position, state, next track) instead of showing it as stopped.
+    func adoptSpeaker() async {
+        guard state == .idle, !queue.isEmpty,
+              let info = try? await Speaker.shared.positionInfo(), !info.uri.isEmpty,
+              let ts = try? await Speaker.shared.transportState(),
+              ts == "PLAYING" || ts == "PAUSED_PLAYBACK", state == .idle else { return }
+        // Our URLs end in /t/<id>.<ext> (converted) or contain /Audio/<id>/ (original from Emby).
+        func matches(_ t: Track) -> Bool { info.uri.contains("/t/\(t.Id).") || info.uri.contains("/Audio/\(t.Id)/") }
+        let order = Array(queue.indices.dropFirst(max(0, index))) + Array(queue.indices.prefix(max(0, index)))
+        guard let i = order.first(where: { matches(queue[$0]) }) else { return }
+        let t = queue[i]
+        let mime: String
+        var file: URL?
+        if info.uri.contains("/t/") {
+            let name = String(info.uri.split(separator: "/").last ?? "")
+            mime = name.hasSuffix(".mp3") ? "audio/mpeg" : "audio/mp4"
+            file = await Preparer.shared.dir.appendingPathComponent(name)
+        } else {
+            mime = Config.speaker?.flacMime ?? "audio/flac"
+        }
+        urls[t.Id] = (info.uri, mime, file)
+        generation += 1
+        index = i
+        resumeAt = nil
+        duration = info.duration > 0 ? info.duration : t.duration
+        position = info.rel
+        lastPosition = info.rel
+        stoppedPolls = 0
+        outputLabel = label(mime)
+        state = ts == "PLAYING" ? .playing : .paused
+        keepAwake(state == .playing)
+        debugLog("adopted \(t.Name) at \(Int(info.rel))s, \(ts)")
+        // The next track the speaker holds may point at an old address: hand it a fresh one.
+        await queueNext(generation)
+    }
+
     /// Debug (--preview): shows a queue in the UI without touching the speaker.
     func preview(_ tracks: [Track]) {
         Speaker.dryRun = true

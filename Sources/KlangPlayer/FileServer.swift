@@ -62,6 +62,20 @@ final class FileServer {
         }
     }
 
+    /// Converted tracks already in the cache, served by name — so a speaker that still has a URL
+    /// from before an app restart can fetch it. Only plain "<id>.m4a|mp3" names in the cache folder.
+    private func cachedFile(_ path: String) -> (url: URL, mime: String)? {
+        guard path.hasPrefix("/t/") else { return nil }
+        let name = String(path.dropFirst(3))
+        let parts = name.split(separator: ".")
+        guard parts.count == 2, !parts[0].isEmpty, parts[0].allSatisfy({ $0.isLetter || $0.isNumber }),
+              let mime = ["m4a": "audio/mp4", "mp3": "audio/mpeg"][String(parts[1])] else { return nil }
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("KlangPlayer", isDirectory: true)
+        let url = dir.appendingPathComponent(name)
+        return FileManager.default.fileExists(atPath: url.path) ? (url, mime) : nil
+    }
+
     /// Registers a file and returns its URL path.
     func publish(_ url: URL, mime: String) -> String {
         let path = "/t/" + url.lastPathComponent
@@ -137,7 +151,7 @@ final class FileServer {
             return
         }
 
-        guard let entry = files[path],
+        guard let entry = files[path] ?? cachedFile(path),
               let attrs = try? FileManager.default.attributesOfItem(atPath: entry.url.path),
               let size = (attrs[.size] as? NSNumber)?.int64Value, size > 0,
               let fh = try? FileHandle(forReadingFrom: entry.url)
