@@ -6,6 +6,7 @@ struct Album: Identifiable, Hashable, Decodable {
     let AlbumArtist: String?
     let ProductionYear: Int?
     let ImageTags: [String: String]?
+    var UserData: UserItemData? = nil
     /// Set for a compilation that Emby split into one album per artist.
     var parts: [Album]? = nil
     var coverId: String? = nil
@@ -36,6 +37,11 @@ struct Album: Identifiable, Hashable, Decodable {
     }
 }
 
+struct UserItemData: Hashable, Decodable {
+    var IsFavorite: Bool?
+    var PlayCount: Int?
+}
+
 struct MediaStream: Hashable, Decodable {
     let `Type`: String?
     let Codec: String?
@@ -60,8 +66,10 @@ struct Track: Identifiable, Hashable, Decodable {
     let ParentIndexNumber: Int?
     let AlbumPrimaryImageTag: String?
     let MediaSources: [MediaSource]?
+    var UserData: UserItemData? = nil
 
     var id: String { Id }
+    var isFavorite: Bool { UserData?.IsFavorite ?? false }
     var duration: Double { Double(RunTimeTicks ?? 0) / 10_000_000 }
     var artist: String { Artists?.first ?? AlbumArtist ?? "" }
     private var audioStream: MediaStream? {
@@ -237,6 +245,71 @@ final class Emby {
             "Fields": trackFields,
         ])
         return r.Items
+    }
+
+    // MARK: Home
+
+    private func userTracks(_ q: [String: String]) async throws -> [Track] {
+        let uid = try await userId()
+        var q = q
+        q["Recursive"] = "true"
+        q["IncludeItemTypes"] = "Audio"
+        q["Fields"] = trackFields
+        let r: ItemsResponse<Track> = try await get("/Users/\(uid)/Items", q)
+        return r.Items
+    }
+
+    func recentlyPlayed(limit: Int = 30) async throws -> [Track] {
+        try await userTracks(["Filters": "IsPlayed", "SortBy": "DatePlayed", "SortOrder": "Descending", "Limit": "\(limit)"])
+    }
+
+    func mostPlayed(limit: Int = 30) async throws -> [Track] {
+        try await userTracks(["Filters": "IsPlayed", "SortBy": "PlayCount,DatePlayed", "SortOrder": "Descending", "Limit": "\(limit)"])
+    }
+
+    func favoriteTracks() async throws -> [Track] {
+        try await userTracks(["Filters": "IsFavorite", "SortBy": "AlbumArtist,Album,IndexNumber"])
+    }
+
+    func favoriteAlbums() async throws -> [Album] {
+        let uid = try await userId()
+        let r: ItemsResponse<Album> = try await get("/Users/\(uid)/Items", [
+            "Recursive": "true", "IncludeItemTypes": "MusicAlbum", "Filters": "IsFavorite", "SortBy": "AlbumArtist,SortName",
+        ])
+        return r.Items
+    }
+
+    func recentlyAdded(limit: Int = 16) async throws -> [Album] {
+        let uid = try await userId()
+        let r: ItemsResponse<Album> = try await get("/Users/\(uid)/Items", [
+            "Recursive": "true", "IncludeItemTypes": "MusicAlbum", "SortBy": "DateCreated", "SortOrder": "Descending",
+            "Limit": "\(limit)", "Fields": "ProductionYear",
+        ])
+        return r.Items
+    }
+
+    func playlists() async throws -> [FolderEntry] {
+        let uid = try await userId()
+        let r: ItemsResponse<FolderEntry> = try await get("/Users/\(uid)/Items", [
+            "Recursive": "true", "IncludeItemTypes": "Playlist", "SortBy": "SortName", "Fields": "ChildCount",
+        ])
+        return r.Items
+    }
+
+    func playlistTracks(_ id: String) async throws -> [Track] {
+        let uid = try await userId()
+        let r: ItemsResponse<Track> = try await get("/Playlists/\(id)/Items", ["UserId": uid, "Fields": trackFields])
+        return r.Items
+    }
+
+    /// Marks or unmarks an item (track or album) as favorite.
+    func setFavorite(_ id: String, _ on: Bool) async throws {
+        let uid = try await userId()
+        var r = URLRequest(url: url("/Users/\(uid)/FavoriteItems/\(id)"))
+        r.httpMethod = on ? "POST" : "DELETE"
+        let (_, resp) = try await URLSession.shared.data(for: r)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else { throw PlayerError.http(code) }
     }
 
     func imageURL(itemId: String?, tag: String?, size: Int) -> URL? {

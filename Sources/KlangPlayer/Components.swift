@@ -171,6 +171,11 @@ struct TrackRow: View {
             Button("Play") { play() }
             Button("Play Next") { player.playNext([track]) }
             Button("Add to Queue") { player.enqueue([track]) }
+            Divider()
+            let fav = Library.shared.isFavorite(track.Id, server: track.isFavorite)
+            Button(fav ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Add to Favorites")) {
+                Library.shared.toggleFavorite(track.Id, current: fav)
+            }
             if let onRemove {
                 Divider()
                 Button("Remove from Queue", action: onRemove)

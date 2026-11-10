@@ -1,10 +1,11 @@
 import SwiftUI
 
 enum Tab: String, CaseIterable, Identifiable {
-    case albums, artists, folders
+    case home, albums, artists, folders
     var id: Self { self }
     var title: LocalizedStringKey {
         switch self {
+        case .home: "Home"
         case .albums: "Albums"
         case .artists: "Artists"
         case .folders: "Folders"
@@ -16,12 +17,13 @@ enum Route: Hashable {
     case album(Album)
     case artist(Artist)
     case folder(FolderEntry)
+    case playlist(FolderEntry)
 }
 
 struct ContentView: View {
     @ObservedObject var player = Player.shared
     @ObservedObject var lib = Library.shared
-    @State private var tab: Tab = .albums
+    @State private var tab: Tab = .home
     @State private var stacks: [Tab: [Route]] = [:]
     @State private var query = ""
     @State private var overlay: Overlay?
@@ -71,7 +73,7 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 210)
+                .frame(width: 262)
                 SearchField(text: $query, focused: $searchFocused)
             }
             .padding(.horizontal, 12)
@@ -84,6 +86,7 @@ struct ContentView: View {
                 routeView(route)
             } else {
                 switch tab {
+                case .home: HomeView { push($0) }
                 case .albums: AlbumsGrid(albums: lib.albums) { push(.album($0)) }
                 case .artists: ArtistsList { push(.artist($0)) }
                 case .folders: FolderRoot { push(.folder($0)) }
@@ -98,6 +101,7 @@ struct ContentView: View {
         case .album(let a): AlbumView(album: a, back: pop)
         case .artist(let a): ArtistView(artist: a, back: pop) { push(.album($0)) }
         case .folder(let f): FolderView(folder: f, back: pop) { push(.folder($0)) }
+        case .playlist(let p): PlaylistView(playlist: p, back: pop)
         }
     }
 
@@ -108,6 +112,7 @@ struct ContentView: View {
             case .album: tab = .albums
             case .artist: tab = .artists
             case .folder: tab = .folders
+            case .playlist: tab = .home
             }
             query = ""
         }
@@ -266,6 +271,13 @@ struct AlbumTile: View {
             Button("Shuffle") { Task { if let t = try? await lib.tracks(for: album) { player.play(t.shuffled()) } } }
             Button("Play Next") { Task { if let t = try? await lib.tracks(for: album) { player.playNext(t) } } }
             Button("Add to Queue") { Task { if let t = try? await lib.tracks(for: album) { player.enqueue(t) } } }
+            if album.parts == nil {
+                Divider()
+                let fav = lib.isFavorite(album.Id, server: album.UserData?.IsFavorite ?? false)
+                Button(fav ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Add to Favorites")) {
+                    lib.toggleFavorite(album.Id, current: fav)
+                }
+            }
         }
     }
 }
@@ -288,7 +300,11 @@ struct AlbumView: View {
                         title: album.Name,
                         subtitle: [album.artist, album.ProductionYear.map(String.init) ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
                         detail: tracks.isEmpty ? nil : String(localized: "\(tracks.count) tracks") + " · \(totalDuration(tracks)) · \(tracks.first?.sourceLabel ?? "")",
-                        tracks: tracks)
+                        tracks: tracks,
+                        favorite: album.parts != nil ? nil : (
+                            lib.isFavorite(album.Id, server: album.UserData?.IsFavorite ?? false),
+                            { lib.toggleFavorite(album.Id, current: lib.isFavorite(album.Id, server: album.UserData?.IsFavorite ?? false)) }
+                        ))
                     if let error { Text(error).foregroundStyle(.secondary).padding() }
                     LazyVStack(spacing: 0) {
                         ForEach(Array(tracks.enumerated()), id: \.element.id) { i, t in
@@ -313,6 +329,7 @@ struct CollectionHeader: View {
     let subtitle: String
     let detail: String?
     let tracks: [Track]
+    var favorite: (isOn: Bool, toggle: () -> Void)? = nil
     var placeholder = "music.note"
 
     var body: some View {
@@ -337,6 +354,14 @@ struct CollectionHeader: View {
                         Label("Shuffle", systemImage: "shuffle").font(.system(size: 11))
                     }
                     .buttonStyle(.bordered)
+                    if let favorite {
+                        Button(action: favorite.toggle) {
+                            Image(systemName: favorite.isOn ? "heart.fill" : "heart")
+                                .foregroundStyle(favorite.isOn ? Color.pink : .secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .help(favorite.isOn ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Add to Favorites"))
+                    }
                 }
                 .controlSize(.small)
                 .disabled(tracks.isEmpty)
@@ -614,6 +639,122 @@ struct SearchResultsView: View {
                 }
             }
             .padding(.bottom, 10)
+        }
+    }
+}
+
+// MARK: Home
+
+struct HomeView: View {
+    @ObservedObject var player = Player.shared
+    @ObservedObject var lib = Library.shared
+    let open: (Route) -> Void
+
+    private var empty: Bool {
+        lib.playlists.isEmpty && lib.recentAlbums.isEmpty && lib.recentTracks.isEmpty && lib.favoriteTracks.isEmpty
+    }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if !lib.recentTracks.isEmpty {
+                    SectionTitle("Recently Played")
+                    trackList(lib.recentTracks)
+                }
+                if !lib.playlists.isEmpty {
+                    SectionTitle("Playlists")
+                    shelf { ForEach(lib.playlists) { p in PlaylistTile(playlist: p) { open(.playlist(p)) } } }
+                }
+                if !lib.recentAlbums.isEmpty {
+                    SectionTitle("Recently Added")
+                    shelf { ForEach(lib.recentAlbums) { a in AlbumTile(album: a) { open(.album(a)) } } }
+                }
+                if !lib.topTracks.isEmpty {
+                    SectionTitle("Most Played")
+                    trackList(lib.topTracks)
+                }
+                if !lib.favoriteAlbums.isEmpty || !lib.favoriteTracks.isEmpty {
+                    SectionTitle("Favorites")
+                    if !lib.favoriteAlbums.isEmpty {
+                        shelf { ForEach(lib.favoriteAlbums) { a in AlbumTile(album: a) { open(.album(a)) } } }
+                    }
+                    trackList(lib.favoriteTracks, limit: 50)
+                }
+                if empty && !lib.loading {
+                    EmptyState(icon: "house", text: String(localized: "Nothing here yet"))
+                }
+            }
+            .padding(.bottom, 10)
+        }
+        .task { await lib.loadHome() }
+    }
+
+    private func shelf<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(alignment: .top, spacing: 12) { content() }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 4)
+        }
+    }
+
+    @ViewBuilder
+    private func trackList(_ tracks: [Track], limit: Int = 5) -> some View {
+        ForEach(Array(tracks.prefix(limit).enumerated()), id: \.element.id) { i, t in
+            TrackRow(track: t, showArtist: true, showCover: true) { player.play(tracks, at: i) }
+        }
+    }
+}
+
+struct PlaylistTile: View {
+    let playlist: FolderEntry
+    let open: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Cover(url: Emby.shared.imageURL(itemId: playlist.Id, tag: playlist.imageTag, size: 260), size: 112,
+                  placeholder: "music.note.list")
+                .shadow(color: .black.opacity(hover ? 0.3 : 0.12), radius: hover ? 6 : 3, y: 2)
+            Text(playlist.Name).font(.system(size: 11, weight: .medium)).lineLimit(1)
+            Text("\(playlist.ChildCount ?? 0) tracks").font(.system(size: 10)).foregroundStyle(.secondary)
+        }
+        .frame(width: 112)
+        .contentShape(Rectangle())
+        .onHover { hover = $0 }
+        .onTapGesture(perform: open)
+    }
+}
+
+struct PlaylistView: View {
+    @ObservedObject var player = Player.shared
+    @ObservedObject var lib = Library.shared
+    let playlist: FolderEntry
+    let back: () -> Void
+    @State private var tracks: [Track] = []
+    @State private var error: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            NavHeader(title: String(localized: "Playlists"), back: back)
+            ScrollView {
+                VStack(spacing: 0) {
+                    CollectionHeader(
+                        cover: Emby.shared.imageURL(itemId: playlist.Id, tag: playlist.imageTag, size: 300),
+                        title: playlist.Name, subtitle: "",
+                        detail: tracks.isEmpty ? nil : String(localized: "\(tracks.count) tracks") + " · \(totalDuration(tracks))",
+                        tracks: tracks, placeholder: "music.note.list")
+                    if let error { Text(error).foregroundStyle(.secondary).padding() }
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(tracks.enumerated()), id: \.offset) { i, t in
+                            TrackRow(track: t, number: i + 1, showArtist: true) { player.play(tracks, at: i) }
+                        }
+                    }
+                    .padding(.bottom, 10)
+                }
+            }
+        }
+        .task(id: playlist.Id) {
+            do { tracks = try await lib.playlistTracks(playlist.Id) } catch { self.error = error.localizedDescription }
         }
     }
 }

@@ -31,6 +31,15 @@
 "Open Klang Player" = "Открыть Klang Player";
 
 /* Library */
+"Home" = "Главная";
+"Playlists" = "Плейлисты";
+"Recently Added" = "Недавно добавлены";
+"Recently Played" = "Недавно играло";
+"Most Played" = "Часто слушаю";
+"Favorites" = "Избранное";
+"Add to Favorites" = "В избранное";
+"Remove from Favorites" = "Убрать из избранного";
+"Nothing here yet" = "Здесь пока пусто";
 "Albums" = "Альбомы";
 "Artists" = "Артисты";
 "Folders" = "Папки";

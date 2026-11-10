@@ -18,6 +18,16 @@ final class Library: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var searchResults: [Track] = []
 
+    // Home
+    @Published private(set) var playlists: [FolderEntry] = []
+    @Published private(set) var recentAlbums: [Album] = []
+    @Published private(set) var recentTracks: [Track] = []
+    @Published private(set) var topTracks: [Track] = []
+    @Published private(set) var favoriteAlbums: [Album] = []
+    @Published private(set) var favoriteTracks: [Track] = []
+    /// Favorite state changed in this session (id → favorite), applied over server data.
+    @Published private(set) var favoriteOverrides: [String: Bool] = [:]
+
     private var tracksCache: [String: [Track]] = [:]
     private var folderCache: [String: (folders: [FolderEntry], tracks: [Track])] = [:]
     private var searchTask: Task<Void, Never>?
@@ -38,12 +48,49 @@ final class Library: ObservableObject {
                 .map { Artist(name: $0.key, albums: $0.value.sorted { ($0.ProductionYear ?? 0) < ($1.ProductionYear ?? 0) }) }
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             roots = (try? await Emby.shared.musicLibraries()) ?? []
+            await loadHome()
             tracksCache = [:]
             folderCache = [:]
         } catch {
             self.error = error.localizedDescription
         }
         loading = false
+    }
+
+    func loadHome() async {
+        async let pl = try? Emby.shared.playlists()
+        async let ra = try? Emby.shared.recentlyAdded()
+        async let rt = try? Emby.shared.recentlyPlayed()
+        async let tt = try? Emby.shared.mostPlayed()
+        async let fa = try? Emby.shared.favoriteAlbums()
+        async let ft = try? Emby.shared.favoriteTracks()
+        playlists = await pl ?? []
+        recentAlbums = await ra ?? []
+        recentTracks = await rt ?? []
+        topTracks = await tt ?? []
+        favoriteAlbums = await fa ?? []
+        favoriteTracks = await ft ?? []
+    }
+
+    func isFavorite(_ id: String, server: Bool) -> Bool { favoriteOverrides[id] ?? server }
+
+    func toggleFavorite(_ id: String, current: Bool) {
+        favoriteOverrides[id] = !current
+        Task {
+            do {
+                try await Emby.shared.setFavorite(id, !current)
+                await loadHome()
+            } catch {
+                favoriteOverrides[id] = current
+            }
+        }
+    }
+
+    func playlistTracks(_ id: String) async throws -> [Track] {
+        if let t = tracksCache["pl:" + id] { return t }
+        let t = try await Emby.shared.playlistTracks(id)
+        tracksCache["pl:" + id] = t
+        return t
     }
 
     func tracks(for album: Album) async throws -> [Track] {
