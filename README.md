@@ -1,3 +1,5 @@
+<img src="Icon/AppIcon.png" width="128" alt="">
+
 # Klang Player
 
 A macOS menu bar app that plays an [Emby](https://emby.media) music library on network

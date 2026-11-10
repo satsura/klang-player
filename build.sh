@@ -22,6 +22,7 @@ else
 fi
 cp Info.plist "$APP/Contents/Info.plist"
 cp -R Resources/*.lproj "$APP/Contents/Resources/"
+cp Icon/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 # Widget extension: SwiftPM can't build .appex bundles, so compile it directly.
 widget() {
