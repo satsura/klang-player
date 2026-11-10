@@ -51,6 +51,7 @@ struct Marquee: View {
             .background(alignment: .leading) {
                 Text(verbatim: text).font(font).lineLimit(1).fixedSize().hidden()
                     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { textWidth = $0 }
+                    .allowsHitTesting(false)
             }
             .overlay(alignment: .leading) {
                 if overflow {
@@ -66,6 +67,9 @@ struct Marquee: View {
                         .fixedSize()
                         .offset(x: t < pause ? 0 : -CGFloat((t - pause) * speed))
                     }
+                    // The scrolling copy is wider than the box; clipping hides it but doesn't stop it
+                    // from catching clicks meant for neighbours (e.g. the menu bar buttons).
+                    .allowsHitTesting(false)
                 }
             }
             .clipped()
@@ -78,6 +82,7 @@ struct Marquee: View {
                     Rectangle()
                 }
             }
+            .contentShape(Rectangle())
             .onChange(of: text) { start = Date() }
     }
 }
