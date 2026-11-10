@@ -1,6 +1,13 @@
 import AppKit
 import Foundation
 
+/// Playback position, kept apart from Player: it changes every second, and only the
+/// progress bar and time labels need to redraw for it.
+@MainActor
+final class PlaybackClock: ObservableObject {
+    @Published var position: Double = 0
+}
+
 @MainActor
 final class Player: ObservableObject {
     static let shared = Player()
@@ -10,7 +17,11 @@ final class Player: ObservableObject {
     @Published private(set) var queue: [Track] = []
     @Published private(set) var index = -1
     @Published private(set) var state: State = .idle
-    @Published var position: Double = 0
+    let clock = PlaybackClock()
+    var position: Double {
+        get { clock.position }
+        set { if clock.position != newValue { clock.position = newValue } }
+    }
     @Published private(set) var duration: Double = 0
     @Published private(set) var volume: Double = 0
     @Published private(set) var maxVolume: Double = 32
@@ -27,7 +38,8 @@ final class Player: ObservableObject {
     var current: Track? { queue.indices.contains(index) ? queue[index] : nil }
     var upcoming: ArraySlice<Track> { index + 1 < queue.count ? queue[(index + 1)...] : [] }
 
-    private var urls: [String: (url: String, mime: String)] = [:]
+    /// What the speaker gets for each track; `file` is set for files served by this Mac.
+    private var urls: [String: (url: String, mime: String, file: URL?)] = [:]
     private var generation = 0                   // bumps on every explicit track start
     private var polling = false
     private var scrubbing = false
@@ -56,6 +68,10 @@ final class Player: ObservableObject {
         }
         Task { await Preparer.shared.trimCache() }
         Task { await refreshVolume() }
+        // After sleep or a network change the file server may be gone; URLs are re-checked on use.
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in
+            FileServer.shared.start()
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
@@ -63,6 +79,7 @@ final class Player: ObservableObject {
                 // Volume can change on the speaker itself (knob, remote, its app) — keep re-reading it.
                 if self.ticks % 2 == 0 { await self.syncVolume() }
                 if self.ticks % 5 == 0 { self.saveQueue() }
+                if self.ticks % 1800 == 0 { await self.trimCache() }
                 if let at = self.sleepAt, Date() >= at { self.sleepNow() }
                 await self.poll()
             }
@@ -106,6 +123,7 @@ final class Player: ObservableObject {
     func clearUpcoming() {
         guard index + 1 < queue.count else { return }
         queue.removeSubrange((index + 1)...)
+        requeueNext()   // takes the queued next track back from the speaker
     }
 
     private func requeueNext() {
@@ -210,8 +228,11 @@ final class Player: ObservableObject {
         do {
             let (url, mime) = try await urlFor(t)
             guard gen == generation else { return }
+            // Each step awaits the speaker; the user may have skipped or stopped meanwhile.
             try await Speaker.shared.ensureReady()
+            guard gen == generation else { return }
             try await Speaker.shared.setURI(url, meta: didl(t, url: url, mime: mime))
+            guard gen == generation else { return }
             try await Speaker.shared.play()
             guard gen == generation else { return }
             state = .playing
@@ -268,7 +289,11 @@ final class Player: ObservableObject {
     private func queueNext(_ gen: Int) async {
         prefetchAhead()
         let ni = index + 1
-        guard queue.indices.contains(ni), !sleepAfterTrack else { return }
+        guard queue.indices.contains(ni), !sleepAfterTrack else {
+            // Nothing follows: make sure the speaker has no next track left from an earlier queue.
+            if gen == generation { try? await Speaker.shared.setNext("", meta: "") }
+            return
+        }
         let t = queue[ni]
         guard let (url, mime) = try? await urlFor(t), gen == generation,
               queue.indices.contains(index + 1), queue[index + 1].Id == t.Id else { return }
@@ -290,24 +315,46 @@ final class Player: ObservableObject {
     }
 
     private func urlFor(_ t: Track) async throws -> (String, String) {
-        if let u = urls[t.Id] { return (u.url, u.mime) }
+        if let u = urls[t.Id] {
+            // A served file is still valid only if it exists and this Mac's address and port didn't change.
+            guard let f = u.file else { return (u.url, u.mime) }
+            if FileManager.default.fileExists(atPath: f.path), let base = fileBase(), u.url.hasPrefix(base + "/") {
+                return (u.url, u.mime)
+            }
+            urls[t.Id] = nil
+        }
         // Speakers that take FLAC get the original straight from Emby — no conversion, no Mac in the path.
         if let sp = Config.speaker, let flac = sp.flacMime, t.codec == "flac" {
             let u = Emby.shared.originalURL(t).absoluteString
-            urls[t.Id] = (u, flac)
+            urls[t.Id] = (u, flac, nil)
             return (u, flac)
         }
         let p = try await Preparer.shared.prepare(t)
         let url: String
+        var file: URL?
         switch p.source {
         case .file(let f):
-            guard let ip = localIP(toward: Config.speakerIP) else { throw PlayerError.noLocalIP }
-            url = "http://\(ip):\(FileServer.shared.port)\(FileServer.shared.publish(f, mime: p.mime))"
+            FileServer.shared.start()
+            guard let base = fileBase() else { throw PlayerError.noLocalIP }
+            url = base + FileServer.shared.publish(f, mime: p.mime)
+            file = f
         case .remote(let u):
             url = u.absoluteString
         }
-        urls[t.Id] = (url, p.mime)
+        urls[t.Id] = (url, p.mime, file)
         return (url, p.mime)
+    }
+
+    /// http://<this Mac's address toward the speaker>:<file server port>
+    private func fileBase() -> String? {
+        guard let ip = localIP(toward: Config.speakerIP), FileServer.shared.port != 0 else { return nil }
+        return "http://\(ip):\(FileServer.shared.port)"
+    }
+
+    /// Trims the conversion cache, keeping the files of the current and coming tracks.
+    private func trimCache() async {
+        let keep = Set(queue.dropFirst(max(0, index)).prefix(8).map(\.Id))
+        await Preparer.shared.trimCache(keep: keep)
     }
 
     private func label(_ mime: String) -> String {
@@ -350,7 +397,9 @@ final class Player: ObservableObject {
               gen == generation, state == .playing || state == .paused else { return }
 
         // The speaker switched to the next track on its own (gapless).
-        if index + 1 < queue.count, let nu = urls[queue[index + 1].Id], info.uri == nu.url {
+        // The same track twice in a row has the same URL: then only a restart of the time counts.
+        if index + 1 < queue.count, let nu = urls[queue[index + 1].Id], info.uri == nu.url,
+           queue[index + 1].Id != current?.Id || info.rel + 3 < lastPosition {
             index += 1
             position = info.rel
             lastPosition = info.rel
@@ -367,16 +416,24 @@ final class Player: ObservableObject {
             await queueNext(generation)
             return
         }
-        // Someone else took over the speaker (radio, Spotify, Bluetooth…).
         if !info.uri.isEmpty, let cur = current, info.uri != urls[cur.Id]?.url {
-            Reporter.shared.stopped(at: position)
+            if urls.values.contains(where: { $0.url == info.uri }) {
+                // The speaker moved on to one of our tracks that is no longer next in the queue
+                // (removed, or the speaker ignored clearing it): the queue has ended, stop it.
+                Reporter.shared.stopped(at: duration)
+                position = 0
+                Task { try? await Speaker.shared.stop() }
+            } else {
+                // Someone else took over the speaker (radio, Spotify, Bluetooth…).
+                Reporter.shared.stopped(at: position)
+            }
             state = .idle
             keepAwake(false)
             return
         }
 
         if !scrubbing { position = info.rel }
-        if info.duration > 0 { duration = info.duration }
+        if info.duration > 0, info.duration != duration { duration = info.duration }
 
         switch ts {
         case "PLAYING":
@@ -443,7 +500,7 @@ final class Player: ObservableObject {
     // MARK: Sleep timer
 
     func setSleepTimer(minutes: Int?) {
-        sleepAfterTrack = false
+        if sleepAfterTrack { sleepAfterTrack = false; requeueNext() }  // give the speaker its next track back
         sleepAt = minutes.map { Date().addingTimeInterval(Double($0) * 60) }
     }
 
@@ -469,9 +526,11 @@ final class Player: ObservableObject {
     }
 
     /// Stores queue, current track and position (called every few seconds and on quit).
+    /// The queue is written only when it changes; the position is a separate small value.
     func saveQueue() {
         guard !Speaker.dryRun else { return }
-        let sig = "\(queue.count):\(index):\(Int(position)):\(current?.Id ?? "")"
+        UserDefaults.standard.set(position, forKey: "savedPosition")
+        let sig = "\(queue.count):\(index):\(current?.Id ?? ""):\(queue.last?.Id ?? "")"
         guard sig != savedSignature else { return }
         savedSignature = sig
         let saved = SavedQueue(queue: queue, index: index, position: position)
@@ -487,12 +546,13 @@ final class Player: ObservableObject {
             return
         }
         guard s.queue.indices.contains(s.index) else { return }
+        let pos = UserDefaults.standard.object(forKey: "savedPosition") as? Double ?? s.position
         queue = s.queue
         index = s.index
         duration = s.queue[s.index].duration
-        position = s.position
+        position = pos
         state = .idle
-        resumeAt = (s.queue[s.index].Id, s.position)
+        resumeAt = (s.queue[s.index].Id, pos)
     }
 
     /// Debug (--preview): shows a queue in the UI without touching the speaker.
@@ -555,8 +615,12 @@ final class Player: ObservableObject {
             }
             try await Task.sleep(nanoseconds: 4_000_000_000)
             log("after next: idx=\(index) \(current?.Name ?? "-") pos=\(position) state=\(state) status=\(status ?? "-")")
-            // Natural end of track: jump close to the end and wait for the speaker to switch on its own.
+            // Natural end of track: once the speaker really plays, jump close to the end
+            // and wait for it to switch on its own.
+            for _ in 0..<15 where position < 1 { try await Task.sleep(nanoseconds: 1_000_000_000) }
             seek(to: max(0, duration - 6))
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+            log("seeked: pos=\(position) dur=\(duration)")
             for _ in 0..<20 {
                 try await Task.sleep(nanoseconds: 1_000_000_000)
                 if index == 2 { break }

@@ -145,3 +145,59 @@ final class FileServerTests: XCTestCase {
         XCTAssertEqual((r404 as? HTTPURLResponse)?.statusCode, 404)
     }
 }
+
+/// The local API must answer this Mac's own clients but not web pages open in a browser.
+final class LocalAPIAccessTests: XCTestCase {
+    private var server: FileServer!
+
+    override func setUp() {
+        server = FileServer()
+        server.api = { _, _, _ in (200, "application/json", Data("{}".utf8)) }
+        server.remoteKey = "secret-key"
+        server.start()
+    }
+
+    /// Raw request, so Host and browser headers can be set freely. Returns the HTTP status.
+    private func status(_ path: String, host: String? = nil, headers: [String: String] = [:]) -> Int {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(fd) }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(server.port).bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let ok = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard ok == 0 else { return -1 }
+        var req = "POST \(path) HTTP/1.1\r\nHost: \(host ?? "127.0.0.1:\(server.port)")\r\n"
+        for (k, v) in headers { req += "\(k): \(v)\r\n" }
+        req += "Content-Length: 0\r\n\r\n"
+        _ = req.withCString { send(fd, $0, strlen($0), 0) }
+        var buf = [UInt8](repeating: 0, count: 256)
+        let n = recv(fd, &buf, buf.count, 0)
+        guard n > 12 else { return -1 }
+        return Int(String(decoding: buf[9..<12], as: UTF8.self)) ?? -1
+    }
+
+    func testThisMacIsAllowed() {
+        XCTAssertEqual(status("/api/toggle"), 200)
+        XCTAssertEqual(status("/api/toggle", host: "localhost:\(server.port)"), 200)
+    }
+
+    func testWebPageIsRejected() {
+        XCTAssertEqual(status("/api/volume?v=32", headers: ["Origin": "https://evil.example"]), 403)
+        XCTAssertEqual(status("/api/next", headers: ["Sec-Fetch-Site": "cross-site"]), 403)
+    }
+
+    func testDNSRebindingIsRejected() {
+        XCTAssertEqual(status("/api/state", host: "evil.example:\(server.port)"), 403)
+    }
+
+    func testRemoteKey() {
+        XCTAssertEqual(status("/api/next?k=secret-key", headers: ["Origin": "https://evil.example"]), 200)
+        XCTAssertEqual(status("/api/next?k=wrong-key", headers: ["Origin": "https://evil.example"]), 403)
+        XCTAssertTrue(constantTimeEqual("abc", "abc"))
+        XCTAssertFalse(constantTimeEqual("abc", "abd"))
+        XCTAssertFalse(constantTimeEqual("abc", "abcd"))
+    }
+}

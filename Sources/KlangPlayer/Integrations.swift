@@ -16,6 +16,8 @@ final class Integrations {
     private var artImage: NSImage?
     private var lastTrackId: String?
     private var lastState: Player.State?
+    /// Elapsed time last given to Now Playing, and when; the system extrapolates from it.
+    private var npElapsed: (position: Double, at: Date) = (0, .distantPast)
 
     static var showInMenuBar: Bool {
         get { UserDefaults.standard.object(forKey: "showInMenuBar") as? Bool ?? true }
@@ -27,6 +29,11 @@ final class Integrations {
         player.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.update() }
+            .store(in: &bag)
+        // Position ticks: keep the widget/remote JSON fresh; touch Now Playing only after a jump (seek).
+        player.clock.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.positionChanged() }
             .store(in: &bag)
         FileServer.shared.api = { method, path, query in Integrations.handleAPI(method, path, query) }
         FileServer.shared.remoteKey = Remote.enabled ? Remote.key : nil
@@ -47,6 +54,12 @@ final class Integrations {
             loadArt()
             WidgetCenter.shared.reloadAllTimelines()
         }
+    }
+
+    private func positionChanged() {
+        mirrorState()
+        let expected = npElapsed.position + (player.state == .playing ? Date().timeIntervalSince(npElapsed.at) : 0)
+        if abs(player.position - expected) > 2 { updateNowPlaying() }
     }
 
     // MARK: Now Playing / media keys
@@ -85,6 +98,7 @@ final class Integrations {
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: img.size) { _ in img }
         }
         center.nowPlayingInfo = info
+        npElapsed = (player.position, Date())
         center.playbackState = switch player.state {
         case .playing, .preparing: .playing
         case .paused: .paused

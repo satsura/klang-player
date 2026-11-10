@@ -34,13 +34,23 @@ actor Preparer {
     }
 
     func prepare(_ t: Track) async throws -> Prepared {
-        if let task = tasks[t.Id] { return try await task.value }
+        if let task = tasks[t.Id] {
+            // The file may have been trimmed from the cache since: prepare it again.
+            if let p = try? await task.value, case .file(let f) = p.source, !FileManager.default.fileExists(atPath: f.path) {
+                tasks[t.Id] = nil
+            } else {
+                return try await task.value
+            }
+        }
         let dir = self.dir
         let progress = onProgress
         let task = Task { try await Preparer.make(t, dir: dir) { progress?(t.Id, $0) } }
         tasks[t.Id] = task
         do {
-            return try await task.value
+            let p = try await task.value
+            // The MP3 stream is a fallback after a failed conversion: try converting again next time.
+            if case .remote = p.source { tasks[t.Id] = nil }
+            return p
         } catch {
             tasks[t.Id] = nil
             throw error
@@ -118,20 +128,22 @@ actor Preparer {
     }
 
     /// Removes the oldest converted files above the cache limit.
-    func trimCache() {
+    func trimCache(keep: Set<String> = []) {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]) else { return }
         var items: [(url: URL, size: Int64, date: Date)] = files.compactMap {
             guard let v = try? $0.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]) else { return nil }
             return ($0, Int64(v.fileSize ?? 0), v.contentModificationDate ?? .distantPast)
         }
-        // Leftovers from an interrupted conversion.
-        for i in items where i.url.lastPathComponent.contains(".part.") || i.url.lastPathComponent.contains(".src.") {
+        // Leftovers from an interrupted conversion (old ones only: a conversion may be running now).
+        let partial = { (u: URL) in u.lastPathComponent.contains(".part.") || u.lastPathComponent.contains(".src.") }
+        for i in items where partial(i.url) && i.date < Date().addingTimeInterval(-3600) {
             try? fm.removeItem(at: i.url)
         }
-        items.removeAll { $0.url.lastPathComponent.contains(".part.") || $0.url.lastPathComponent.contains(".src.") }
+        items.removeAll { partial($0.url) }
         var total = items.reduce(0) { $0 + $1.size }
-        for i in items.sorted(by: { $0.date < $1.date }) where total > Config.cacheLimitBytes {
+        let removable = items.filter { !keep.contains($0.url.deletingPathExtension().lastPathComponent) }
+        for i in removable.sorted(by: { $0.date < $1.date }) where total > Config.cacheLimitBytes {
             try? fm.removeItem(at: i.url)
             total -= i.size
         }

@@ -226,7 +226,7 @@ struct MiniPlayerView: View {
                             font: .system(size: max(12, s * 0.055), weight: .semibold))
                     Marquee(text: player.current?.artist ?? " ", font: .system(size: max(10, s * 0.042)))
                         .foregroundStyle(.white.opacity(0.75))
-                    ProgressLine(value: progress)
+                    TrackProgressLine()
                         .frame(height: 3)
                         .padding(.top, 2)
                     HStack(spacing: s * 0.08) {
@@ -242,7 +242,7 @@ struct MiniPlayerView: View {
                 .transition(.opacity)
             } else {
                 // Cover only: a thin progress line at the bottom edge.
-                ProgressLine(value: progress)
+                TrackProgressLine()
                     .frame(height: 3)
                     .shadow(color: .black.opacity(0.6), radius: 2)
                     .padding(.horizontal, s * 0.06)
@@ -287,7 +287,7 @@ struct MiniPlayerView: View {
                     Marquee(text: player.current?.artist ?? " ", font: .system(size: max(10, h * 0.155)))
                         .foregroundStyle(.white.opacity(0.7))
                 }
-                ProgressLine(value: progress)
+                TrackProgressLine()
                     .frame(height: 3)
                     .padding(.top, h * 0.04)
             }
@@ -315,8 +315,6 @@ struct MiniPlayerView: View {
     }
 
     // MARK: Pieces
-
-    private var progress: Double { player.duration > 0 ? player.position / player.duration : 0 }
 
     private func artwork(iconSize: CGFloat) -> some View {
         AsyncImage(url: art) { phase in
@@ -381,5 +379,14 @@ struct ProgressLine: View {
                 Capsule().fill(.white.opacity(0.9)).frame(width: g.size.width * min(1, max(0, value)))
             }
         }
+    }
+}
+
+/// Progress of the current track; observes only the playback clock.
+struct TrackProgressLine: View {
+    @ObservedObject var clock = Player.shared.clock
+    var body: some View {
+        let d = Player.shared.duration
+        ProgressLine(value: d > 0 ? clock.position / d : 0)
     }
 }

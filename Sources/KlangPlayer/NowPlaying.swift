@@ -3,7 +3,6 @@ import SwiftUI
 struct NowPlayingView: View {
     @ObservedObject var player = Player.shared
     let showQueue: () -> Void
-    @State private var scrub: Double?
 
     private var art: URL? {
         player.current?.artURL(size: 300)
@@ -45,25 +44,7 @@ struct NowPlayingView: View {
                 Spacer(minLength: 0)
             }
 
-            VStack(spacing: 1) {
-                Slider(value: Binding(get: { scrub ?? player.position }, set: { scrub = $0 }),
-                       in: 0...max(player.duration, 1)) { editing in
-                    player.setScrubbing(editing)
-                    if !editing, let s = scrub {
-                        player.seek(to: s)
-                        scrub = nil
-                    }
-                }
-                .controlSize(.mini)
-                .disabled(player.current == nil || player.state == .preparing)
-                HStack {
-                    Text(mmss(scrub ?? player.position))
-                    Spacer()
-                    Text("-" + mmss(max(0, player.duration - (scrub ?? player.position))))
-                }
-                .font(.system(size: 10).monospacedDigit())
-                .foregroundStyle(.secondary)
-            }
+            PositionSlider()
 
             HStack {
                 volume.frame(width: 110)
@@ -207,5 +188,35 @@ struct SleepButton: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Sleep timer")
+    }
+}
+
+/// Seek slider and times. Observes only the playback clock, so the rest of the window
+/// doesn't redraw every second.
+private struct PositionSlider: View {
+    @ObservedObject var clock = Player.shared.clock
+    @State private var scrub: Double?
+    private var player: Player { .shared }
+
+    var body: some View {
+        VStack(spacing: 1) {
+            Slider(value: Binding(get: { scrub ?? clock.position }, set: { scrub = $0 }),
+                   in: 0...max(player.duration, 1)) { editing in
+                player.setScrubbing(editing)
+                if !editing, let s = scrub {
+                    player.seek(to: s)
+                    scrub = nil
+                }
+            }
+            .controlSize(.mini)
+            .disabled(player.current == nil || player.state == .preparing)
+            HStack {
+                Text(mmss(scrub ?? clock.position))
+                Spacer()
+                Text("-" + mmss(max(0, player.duration - (scrub ?? clock.position))))
+            }
+            .font(.system(size: 10).monospacedDigit())
+            .foregroundStyle(.secondary)
+        }
     }
 }

@@ -38,8 +38,16 @@ final class FileServer {
                 sem.signal()
             case .failed(let e):
                 NSLog("KlangPlayer fileserver failed: \(e)")
+                debugLog("fileserver failed: \(e)")
                 l.cancel()
                 sem.signal()
+                // It was running (e.g. the network went away during sleep): listen again.
+                DispatchQueue.main.async {
+                    guard let self, self.listener === l else { return }
+                    self.listener = nil
+                    self.port = 0
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.start() }
+                }
             default:
                 break
             }
@@ -102,12 +110,21 @@ final class FileServer {
                     if kv.count == 2 { query[kv[0]] = kv[1] }
                 }
             }
-            var local = false
+            var loopback = false
             if case .hostPort(let host, _) = c.endpoint {
                 let h = "\(host)"
-                local = h == "127.0.0.1" || h == "::1" || h.hasPrefix("::ffff:127.0.0.1")
+                loopback = h == "127.0.0.1" || h == "::1" || h.hasPrefix("::ffff:127.0.0.1")
             }
-            let keyOK = remoteKey.map { !$0.isEmpty && query["k"] == $0 } ?? false
+            // This Mac (widget, menu bar app) is trusted without a key, but not a web page open in a
+            // browser here: browsers send Origin / Sec-Fetch-Site, and DNS rebinding shows up as a foreign Host.
+            let host = headers["host"] ?? ""
+            let hostName = host.hasPrefix("[") ? String(host.prefix { $0 != "]" }) + "]" : String(host.prefix { $0 != ":" })
+            let localHost = ["127.0.0.1", "localhost", "[::1]"].contains(hostName)
+            let sameOrigin = headers["origin"] == "http://\(host)"
+            let fromPage = (headers["origin"] != nil && !sameOrigin)
+                || (headers["sec-fetch-site"].map { $0 != "none" && $0 != "same-origin" } ?? false)
+            let local = loopback && localHost && !fromPage
+            let keyOK = remoteKey.map { !$0.isEmpty && constantTimeEqual(query["k"] ?? "", $0) } ?? false
             guard local || keyOK, let api else {
                 send(c, "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
                 return
@@ -207,4 +224,13 @@ func localIP(toward target: String) -> String? {
         if fallback == nil { fallback = s }
     }
     return fallback
+}
+
+/// Compares secrets without leaking how many leading characters matched.
+func constantTimeEqual(_ a: String, _ b: String) -> Bool {
+    let x = Array(a.utf8), y = Array(b.utf8)
+    guard x.count == y.count else { return false }
+    var d: UInt8 = 0
+    for i in x.indices { d |= x[i] ^ y[i] }
+    return d == 0
 }
