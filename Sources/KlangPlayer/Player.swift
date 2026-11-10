@@ -557,15 +557,33 @@ final class Player: ObservableObject {
 
     /// After an app restart the speaker may still be playing a track of the saved queue:
     /// pick it up (position, state, next track) instead of showing it as stopped.
-    func adoptSpeaker() async {
-        guard state == .idle, !queue.isEmpty,
-              let info = try? await Speaker.shared.positionInfo(), !info.uri.isEmpty,
-              let ts = try? await Speaker.shared.transportState(),
-              ts == "PLAYING" || ts == "PAUSED_PLAYBACK", state == .idle else { return }
+    func adoptSpeaker(attempt: Int = 1) async {
+        guard state == .idle, !queue.isEmpty else { return }
+        let info: PositionInfo
+        let ts: String
+        do {
+            info = try await Speaker.shared.positionInfo()
+            ts = try await Speaker.shared.transportState()
+        } catch {
+            // Right after launch the speaker (or the network) may not answer yet: try again a bit later.
+            debugLog("adopt: speaker not answering (\(error.localizedDescription)), attempt \(attempt)")
+            if attempt < 3 {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                await adoptSpeaker(attempt: attempt + 1)
+            }
+            return
+        }
+        guard state == .idle, !info.uri.isEmpty, ts == "PLAYING" || ts == "PAUSED_PLAYBACK" else {
+            debugLog("adopt: nothing to pick up (\(ts))")
+            return
+        }
         // Our URLs end in /t/<id>.<ext> (converted) or contain /Audio/<id>/ (original from Emby).
         func matches(_ t: Track) -> Bool { info.uri.contains("/t/\(t.Id).") || info.uri.contains("/Audio/\(t.Id)/") }
         let order = Array(queue.indices.dropFirst(max(0, index))) + Array(queue.indices.prefix(max(0, index)))
-        guard let i = order.first(where: { matches(queue[$0]) }) else { return }
+        guard let i = order.first(where: { matches(queue[$0]) }) else {
+            debugLog("adopt: the speaker plays something else")
+            return
+        }
         let t = queue[i]
         let mime: String
         var file: URL?
