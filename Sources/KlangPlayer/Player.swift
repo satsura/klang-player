@@ -38,6 +38,7 @@ final class Player: ObservableObject {
     /// Position to continue from after the app restarts (applied when that track starts again).
     private var resumeAt: (trackId: String, position: Double)?
     private var savedSignature = ""
+    private var prefetchTask: Task<Void, Never>?
 
     private init() {
         FileServer.shared.start()
@@ -257,14 +258,30 @@ final class Player: ObservableObject {
         return match.ip != cur.ip
     }
 
-    /// Prepares the following track and hands it to the speaker for a gapless switch.
+    /// Prepares the following track and hands it to the speaker for a gapless switch,
+    /// then converts a few more tracks ahead in the background.
     private func queueNext(_ gen: Int) async {
+        prefetchAhead()
         let ni = index + 1
         guard queue.indices.contains(ni) else { return }
         let t = queue[ni]
         guard let (url, mime) = try? await urlFor(t), gen == generation,
               queue.indices.contains(index + 1), queue[index + 1].Id == t.Id else { return }
         try? await Speaker.shared.setNext(url, meta: didl(t, url: url, mime: mime))
+    }
+
+    /// Converts tracks 2…6 positions ahead, one at a time, so skipping and shuffle are instant.
+    private func prefetchAhead() {
+        prefetchTask?.cancel()
+        guard Config.speaker?.supportsFLAC != true else { return } // FLAC speakers get originals, nothing to prepare
+        let ahead = Array(queue.dropFirst(index + 2).prefix(5))
+        guard !ahead.isEmpty else { return }
+        prefetchTask = Task(priority: .utility) {
+            for t in ahead {
+                guard !Task.isCancelled else { return }
+                _ = try? await Preparer.shared.prepare(t)
+            }
+        }
     }
 
     private func urlFor(_ t: Track) async throws -> (String, String) {
@@ -474,7 +491,7 @@ final class Player: ObservableObject {
             let vol = try await Speaker.shared.volume()
             if Config.speaker?.kind == .frontier { try await Speaker.shared.setVolume(10) }
             let t0 = Date()
-            play(Array(tracks.prefix(3)), at: 0)
+            play(tracks, at: 0)
             for _ in 0..<40 {
                 try await Task.sleep(nanoseconds: 1_000_000_000)
                 if state == .playing { break }
