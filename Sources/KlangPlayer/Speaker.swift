@@ -19,6 +19,8 @@ final class Speaker {
     }()
 
     private var ip: String { Config.speakerIP }
+    /// Debug preview: only reads are allowed, nothing that changes what the speaker does.
+    static var dryRun = false
     private var mpModeKey: String?
 
     // MARK: UPnP
@@ -26,6 +28,7 @@ final class Speaker {
     @discardableResult
     private func soap(_ service: String, _ action: String, _ args: String = "") async throws -> String {
         guard !ip.isEmpty else { throw PlayerError.notConfigured }
+        if Speaker.dryRun, !action.hasPrefix("Get") { throw PlayerError.speaker("dry run: \(action)") }
         let ns = "urn:schemas-upnp-org:service:\(service):1"
         let body = """
         <?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" \
@@ -80,6 +83,7 @@ final class Speaker {
 
     private func fs(_ op: String, _ node: String, value: String? = nil, extra: String = "", query: String = "") async throws -> String {
         guard !ip.isEmpty else { throw PlayerError.notConfigured }
+        if Speaker.dryRun, op == "SET" { throw PlayerError.speaker("dry run: \(node)") }
         var u = "http://\(ip)/fsapi/\(op)/\(node)\(extra)?pin=1234\(query)"
         if let value { u += "&value=\(value)" }
         let (data, _) = try await session.data(from: URL(string: u)!)

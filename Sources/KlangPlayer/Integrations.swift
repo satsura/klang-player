@@ -3,7 +3,7 @@ import Combine
 import MediaPlayer
 import WidgetKit
 
-/// Mirrors player state to: menu bar title + buttons, macOS Now Playing (media keys),
+/// Mirrors player state to macOS Now Playing (media keys),
 /// the local /api/state endpoint and the widget.
 @MainActor
 final class Integrations {
@@ -11,10 +11,6 @@ final class Integrations {
 
     private let player = Player.shared
     private var bag = Set<AnyCancellable>()
-    private var titleItem: NSStatusItem?
-    private var prevItem: NSStatusItem?
-    private var playItem: NSStatusItem?
-    private var nextItem: NSStatusItem?
 
     private var artTrackId: String?
     private var artImage: NSImage?
@@ -23,7 +19,7 @@ final class Integrations {
 
     static var showInMenuBar: Bool {
         get { UserDefaults.standard.object(forKey: "showInMenuBar") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "showInMenuBar"); Integrations.shared.update() }
+        set { UserDefaults.standard.set(newValue, forKey: "showInMenuBar"); StatusBar.shared.resize() }
     }
 
     func start() {
@@ -44,58 +40,12 @@ final class Integrations {
         lastTrackId = t?.Id
         lastState = player.state
 
-        updateMenuBar()
         updateNowPlaying()
         mirrorState()
         if changed {
             loadArt()
             WidgetCenter.shared.reloadAllTimelines()
         }
-    }
-
-    // MARK: Menu bar
-
-    private func updateMenuBar() {
-        let show = Integrations.showInMenuBar && player.current != nil
-        if show, titleItem == nil {
-            // Each new item goes to the left of the previous ones: next, play, prev, title.
-            nextItem = makeButton("forward.fill", #selector(MenuTarget.next))
-            playItem = makeButton("play.fill", #selector(MenuTarget.toggle))
-            prevItem = makeButton("backward.fill", #selector(MenuTarget.prev))
-            let ti = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-            ti.button?.target = MenuTarget.shared
-            ti.button?.action = #selector(MenuTarget.card)
-            ti.button?.toolTip = String(localized: "Show card")
-            titleItem = ti
-        } else if !show, titleItem != nil {
-            for i in [titleItem, prevItem, playItem, nextItem] { if let i { NSStatusBar.system.removeStatusItem(i) } }
-            titleItem = nil; prevItem = nil; playItem = nil; nextItem = nil
-        }
-        guard show, let t = player.current else { return }
-        var title = [t.artist, t.Name].filter { !$0.isEmpty }.joined(separator: " — ")
-        if title.count > 38 { title = String(title.prefix(37)) + "…" }
-        titleItem?.button?.attributedTitle = NSAttributedString(string: title, attributes: [
-            .font: NSFont.systemFont(ofSize: 12),
-            .foregroundColor: player.state == .playing ? NSColor.labelColor : NSColor.secondaryLabelColor,
-        ])
-        let playing = player.state == .playing || player.state == .preparing
-        playItem?.button?.image = symbol(playing ? "pause.fill" : "play.fill")
-        nextItem?.button?.appearsDisabled = player.upcoming.isEmpty
-    }
-
-    private func makeButton(_ name: String, _ action: Selector) -> NSStatusItem {
-        let i = NSStatusBar.system.statusItem(withLength: 22)
-        i.button?.image = symbol(name)
-        i.button?.target = MenuTarget.shared
-        i.button?.action = action
-        return i
-    }
-
-    private func symbol(_ name: String) -> NSImage? {
-        let img = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
-        img?.isTemplate = true
-        return img
     }
 
     // MARK: Now Playing / media keys
@@ -221,14 +171,4 @@ final class Integrations {
             return (404, "text/plain", Data())
         }
     }
-}
-
-/// Target for status bar buttons.
-@MainActor
-final class MenuTarget: NSObject {
-    static let shared = MenuTarget()
-    @objc func toggle() { Player.shared.toggle() }
-    @objc func next() { Player.shared.next() }
-    @objc func prev() { Player.shared.previous() }
-    @objc func card() { MiniPlayer.shared.toggle() }
 }

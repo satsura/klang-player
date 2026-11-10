@@ -3,16 +3,9 @@ import SwiftUI
 @main
 struct KlangPlayerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @ObservedObject private var player = Player.shared
-
+    // The UI lives in the menu bar (StatusBar) and the floating card; no regular windows.
     var body: some Scene {
-        MenuBarExtra {
-            ContentView()
-                .task { if Library.shared.albums.isEmpty { await Library.shared.load() } }
-        } label: {
-            Image(systemName: player.state == .playing ? "hifispeaker.fill" : "hifispeaker")
-        }
-        .menuBarExtraStyle(.window)
+        Settings { EmptyView() }
     }
 }
 
@@ -40,8 +33,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let args = CommandLine.arguments
         if !args.contains("--discover") {
             Task { @MainActor in
+                _ = Player.shared
+                StatusBar.shared.start()
                 Integrations.shared.start()
                 MiniPlayer.shared.restore()
+                if !Config.isConfigured { StatusBar.shared.showPopover() }
             }
         }
         if args.contains("--selftest") {
@@ -80,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Debug: fake a queue in the UI without touching the speaker (KlangPlayer --preview [--card]).
         if args.contains("--preview") {
+            Speaker.dryRun = true
             Task { @MainActor in
                 await Library.shared.load()
                 if let a = Library.shared.albums.first(where: { $0.imageTag != nil }),

@@ -314,6 +314,7 @@ final class Player: ObservableObject {
 
     /// Debug (--preview): shows a queue in the UI without touching the speaker.
     func preview(_ tracks: [Track]) {
+        Speaker.dryRun = true
         generation += 1
         queue = tracks
         index = 0
