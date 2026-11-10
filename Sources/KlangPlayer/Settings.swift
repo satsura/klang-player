@@ -18,6 +18,7 @@ struct SettingsView: View {
 
     @State private var loginItem = SMAppService.mainApp.status == .enabled
     @State private var loginItemError: String?
+    @State private var menuBar = Integrations.showInMenuBar
 
     var body: some View {
         ScrollView {
@@ -97,6 +98,9 @@ struct SettingsView: View {
                             }
                         }
                     if let loginItemError { Text(loginItemError).font(.system(size: 10)).foregroundStyle(.red) }
+                    Toggle("Название и кнопки в строке меню", isOn: $menuBar)
+                        .font(.system(size: 12))
+                        .onChange(of: menuBar) { Integrations.showInMenuBar = menuBar }
                     HStack {
                         Text("Кэш AAC: до 3 ГБ").font(.system(size: 11)).foregroundStyle(.secondary)
                         Spacer()

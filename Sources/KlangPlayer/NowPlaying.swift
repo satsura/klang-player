@@ -76,14 +76,18 @@ struct NowPlayingView: View {
                 .buttonStyle(.borderless)
                 .disabled(player.current == nil)
                 Spacer()
-                Button(action: showQueue) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "list.bullet")
-                        if !player.upcoming.isEmpty { Text("\(player.upcoming.count)").font(.system(size: 10).monospacedDigit()) }
+                HStack(spacing: 12) {
+                    Button { MiniPlayer.shared.toggle() } label: { Image(systemName: "pip") }
+                        .help("Карточка поверх окон")
+                    Button(action: showQueue) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "list.bullet")
+                            if !player.upcoming.isEmpty { Text("\(player.upcoming.count)").font(.system(size: 10).monospacedDigit()) }
+                        }
                     }
+                    .help("Очередь")
                 }
                 .buttonStyle(.borderless)
-                .help("Очередь")
                 .frame(width: 110, alignment: .trailing)
             }
         }

@@ -9,6 +9,8 @@ final class FileServer {
     private var listener: NWListener?
     private var files: [String: (url: URL, mime: String)] = [:]
     private(set) var port: UInt16 = 0
+    /// Local control API (/api/*), answered only for connections from this Mac. Called on the server queue.
+    var api: ((_ method: String, _ path: String) -> (Int, String, Data))?
 
     func start() {
         guard listener == nil else { return }
@@ -87,6 +89,24 @@ final class FileServer {
             if let i = l.firstIndex(of: ":") {
                 headers[l[..<i].lowercased()] = l[l.index(after: i)...].trimmingCharacters(in: .whitespaces)
             }
+        }
+
+        if path.hasPrefix("/api/") {
+            var local = false
+            if case .hostPort(let host, _) = c.endpoint {
+                let h = "\(host)"
+                local = h == "127.0.0.1" || h == "::1" || h.hasPrefix("::ffff:127.0.0.1")
+            }
+            guard local, let api else {
+                send(c, "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                return
+            }
+            let (status, type, body) = api(method, path)
+            let reason = [200: "OK", 204: "No Content", 404: "Not Found", 405: "Method Not Allowed"][status] ?? "OK"
+            var d = Data("HTTP/1.1 \(status) \(reason)\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n".utf8)
+            d.append(body)
+            c.send(content: d, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in c.cancel() })
+            return
         }
 
         guard let entry = files[path],

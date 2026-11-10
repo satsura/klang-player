@@ -19,8 +19,31 @@ struct KlangPlayerApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
 
+    /// klangplayer://toggle | next | prev | card — used by the widget.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        Task { @MainActor in
+            for u in urls where u.scheme == "klangplayer" {
+                switch u.host {
+                case "toggle": Player.shared.toggle()
+                case "next": Player.shared.next()
+                case "prev": Player.shared.previous()
+                case "card": MiniPlayer.shared.toggle()
+                default: break
+                }
+            }
+            // Give focus back to whatever was active before the widget click.
+            NSApp.deactivate()
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = CommandLine.arguments
+        if !args.contains("--discover") {
+            Task { @MainActor in
+                Integrations.shared.start()
+                MiniPlayer.shared.restore()
+            }
+        }
         if args.contains("--selftest") {
             Task { @MainActor in await Player.shared.selfTest() }
         }
@@ -49,13 +72,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 w.makeKeyAndOrderFront(nil)
                 NSApp.activate(ignoringOtherApps: true)
                 self.window = w
-                if args.contains("--preview") {
-                    await Library.shared.load()
-                    if let a = Library.shared.albums.first(where: { $0.imageTag != nil }),
-                       let t = try? await Library.shared.tracks(for: a) {
-                        Player.shared.preview(Array(t.prefix(6)))
-                    }
+            }
+        }
+        // Debug: fake a queue in the UI without touching the speaker (KlangPlayer --preview [--card]).
+        if args.contains("--preview") {
+            Task { @MainActor in
+                await Library.shared.load()
+                if let a = Library.shared.albums.first(where: { $0.imageTag != nil }),
+                   let t = try? await Library.shared.tracks(for: a) {
+                    Player.shared.preview(Array(t.prefix(6)))
                 }
+                if args.contains("--card") { MiniPlayer.shared.show() }
             }
         }
     }

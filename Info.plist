@@ -20,6 +20,17 @@
     <string>14.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>Klang Player controls</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>klangplayer</string>
+            </array>
+        </dict>
+    </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Нужно для связи с колонкой и сервером Emby в домашней сети.</string>
     <key>NSAppTransportSecurity</key>

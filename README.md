@@ -30,6 +30,10 @@ If a track can't be converted locally, it falls back to a live MP3 320 stream fr
 - Albums grid, artists, folder browser (play any folder recursively), search
 - Queue: play next, add to queue, remove, jump
 - Speaker volume, seek, pause, previous/next
+- Floating cover card above all windows (never takes focus)
+- Track title and buttons in the menu bar
+- macOS Now Playing: Control Center, lock screen and media keys
+- Desktop / Notification Center widget (small and medium)
 - Speaker discovery over SSDP
 - Emby login with username and password
 - Converted tracks are cached in `~/Library/Caches/KlangPlayer` (up to 3 GB)
@@ -49,8 +53,8 @@ The UI is in Russian.
 ./build.sh
 ```
 
-This builds a release binary and puts `KlangPlayer.app` into `~/Applications`
-(ad-hoc signed). Open it, then click the speaker icon in the menu bar. On first launch
+This builds a release binary and the widget extension and puts `KlangPlayer.app` into
+`~/Applications` (ad-hoc signed). Open it, then click the speaker icon in the menu bar. On first launch
 the app asks for the Emby server, your login and the speaker; macOS also asks for local
 network access — allow it.
 
@@ -59,13 +63,16 @@ network access — allow it.
 - The Mac has to stay on while music is playing: the speaker fetches files from it.
 - Tested with Loewe klang s3 (firmware `ir-cui-FS2340-0000-0181_V4.5.21`).
 - Speaker control uses the Frontier Silicon `fsapi` with the default PIN `1234`.
+- The widget reads state from `http://127.0.0.1:47830/api/state` (answered only for this Mac)
+  and controls playback through `klangplayer://toggle|next|prev|card` links.
 
 ## Debug flags
 
 ```sh
 KlangPlayer --discover                    # list UPnP renderers on the network
 KLANG_ALBUM="Name" KlangPlayer --selftest # play 3 tracks of an album briefly at low volume
-KlangPlayer --window [x y] [--preview]    # show the UI in a regular window
+KlangPlayer --window [x y]                # show the UI in a regular window
+KlangPlayer --preview [--card]            # fake a queue in the UI without using the speaker
 ```
 
 ## License
