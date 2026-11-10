@@ -3,9 +3,16 @@ import SwiftUI
 @main
 struct KlangPlayerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    // The UI lives in the menu bar (StatusBar) and the floating card; no regular windows.
+    // The UI lives in the menu bar (StatusBar) and the floating card. ⌘, and the app menu
+    // open this window, so it shows the same settings as the popover.
     var body: some Scene {
-        Settings { EmptyView() }
+        Settings {
+            SettingsView {
+                NSApp.keyWindow?.close()
+                Task { await Library.shared.load() }
+            }
+            .frame(width: 420, height: 640)
+        }
     }
 }
 
