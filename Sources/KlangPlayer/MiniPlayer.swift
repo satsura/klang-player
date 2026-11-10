@@ -7,6 +7,8 @@ final class MiniPlayer {
     static let shared = MiniPlayer()
 
     private var panel: NSPanel?
+    private var scrollMonitor: Any?
+    private var scrollAccum: CGFloat = 0
     var isVisible: Bool { panel?.isVisible ?? false }
 
     func toggle() { isVisible ? hide() : show() }
@@ -49,6 +51,19 @@ final class MiniPlayer {
             p.setFrameOrigin(NSPoint(x: s.maxX - 300, y: s.maxY - 300))
         }
         p.setFrameAutosaveName("KlangMiniPlayer")
+        // Scroll over the card = speaker volume. The panel never becomes key, but scroll
+        // events still go to the window under the cursor, so a local monitor sees them.
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self, weak p] e in
+            guard let self, let p, e.window === p else { return e }
+            let d = e.hasPreciseScrollingDeltas ? e.scrollingDeltaY / 12 : e.scrollingDeltaY
+            self.scrollAccum += e.isDirectionInvertedFromDevice ? -d : d
+            let steps = Int(self.scrollAccum)
+            if steps != 0 {
+                self.scrollAccum -= CGFloat(steps)
+                Player.shared.setVolume(Player.shared.volume + Double(steps))
+            }
+            return nil
+        }
         return p
     }
 }
@@ -63,6 +78,8 @@ struct MiniPlayerView: View {
     let close: () -> Void
     @State private var hover = false
     @State private var dragging = false
+    @State private var showVolume = false
+    @State private var volumeHide: Task<Void, Never>?
 
     private var art: URL? {
         Emby.shared.imageURL(itemId: player.current?.AlbumId, tag: player.current?.AlbumPrimaryImageTag, size: 800)
@@ -126,6 +143,44 @@ struct MiniPlayerView: View {
                 .foregroundStyle(.white)
                 .padding(s * 0.05)
                 .shadow(color: .black.opacity(0.5), radius: 3)
+            }
+            .overlay(alignment: .top) {
+                VStack(spacing: 6) {
+                    if hover, let n = player.upcoming.first {
+                        HStack(spacing: 4) {
+                            Text("Next:").opacity(0.7)
+                            Text(verbatim: "\(n.Name) — \(n.artist)").lineLimit(1)
+                        }
+                        .font(.system(size: max(10, s * 0.038)))
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(.black.opacity(0.45), in: Capsule())
+                        .padding(.horizontal, 34)
+                    }
+                    if showVolume {
+                        HStack(spacing: 6) {
+                            Image(systemName: player.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                            ProgressLine(value: player.maxVolume > 0 ? player.volume / player.maxVolume : 0)
+                                .frame(width: s * 0.3, height: 4)
+                            Text("\(Int(player.volume))").monospacedDigit()
+                        }
+                        .font(.system(size: max(10, s * 0.04)))
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .transition(.opacity)
+                    }
+                }
+                .foregroundStyle(.white)
+                .padding(.top, 10)
+                .allowsHitTesting(false)
+            }
+            .onChange(of: player.volume) {
+                withAnimation(.easeOut(duration: 0.15)) { showVolume = true }
+                volumeHide?.cancel()
+                volumeHide = Task {
+                    try? await Task.sleep(nanoseconds: 1_300_000_000)
+                    guard !Task.isCancelled else { return }
+                    withAnimation(.easeIn(duration: 0.3)) { showVolume = false }
+                }
             }
             .overlay(alignment: .topLeading) {
                 if hover {
