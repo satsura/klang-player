@@ -275,6 +275,70 @@ struct TrackRow: View {
     }
 }
 
+/// Keys the player window passes on (arrows, Return) to the grid on screen.
+@MainActor
+final class GridKeyRouter {
+    static let shared = GridKeyRouter()
+    var handler: ((KeyEquivalent) -> Bool)?
+}
+
+/// Arrow keys move a highlight across a grid of `count` items; Return opens it.
+/// The window delivers the keys (see LibraryWindow), so it works without clicking into the grid first.
+struct GridKeys: ViewModifier {
+    let enabled: Bool
+    let count: Int
+    let columns: Int
+    @Binding var selection: Int?
+    let open: (Int) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { if enabled { GridKeyRouter.shared.handler = handle } }
+            .onChange(of: columns) { if enabled { GridKeyRouter.shared.handler = handle } }
+            .onChange(of: count) { if enabled { GridKeyRouter.shared.handler = handle } }
+            .onDisappear { if enabled { GridKeyRouter.shared.handler = nil } }
+    }
+
+    private func handle(_ key: KeyEquivalent) -> Bool {
+        guard count > 0 else { return false }
+        guard let s = selection, s < count else {
+            guard key != .return else { return false }
+            selection = 0
+            return true
+        }
+        switch key {
+        case .tab: break                     // into the grid: keep the highlight where it was
+        case .return: open(s)
+        case .leftArrow: selection = max(0, s - 1)
+        case .rightArrow: selection = min(count - 1, s + 1)
+        case .upArrow:
+            guard s >= columns else { return false }
+            selection = s - columns
+        case .downArrow:
+            guard s / columns < (count - 1) / columns else { return false }
+            selection = min(count - 1, s + columns)
+        default: return false
+        }
+        return true
+    }
+}
+
+extension View {
+    /// Ring around a 112 pt tile's cover: the keyboard selection in a grid.
+    @ViewBuilder
+    func gridHighlight(_ on: Bool) -> some View {
+        overlay(alignment: .top) {
+            if on {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(Color.accentColor, lineWidth: 3)
+                    .frame(width: 120, height: 120)
+                    .offset(y: -4)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
 extension Image {
     /// At least 22×22 pt to click, however small the symbol.
     func hitTarget() -> some View { frame(minWidth: 22, minHeight: 22).contentShape(Rectangle()) }

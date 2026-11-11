@@ -216,8 +216,13 @@ struct AlbumsGrid: View {
     @ObservedObject var lib = Library.shared
     let albums: [Album]
     let open: (Album) -> Void
+    @Environment(\.wideBrowser) private var wide
+    @State private var selection: Int?
+    @State private var width: CGFloat = 0
 
     private let columns = [GridItem(.adaptive(minimum: 108, maximum: 130), spacing: 12, alignment: .top)]
+    /// Same count as the adaptive grid: (inner width + spacing) / (minimum + spacing).
+    private var perRow: Int { max(1, Int((width - 24 + 12) / (108 + 12))) }
 
     var body: some View {
         if lib.loading && albums.isEmpty {
@@ -226,11 +231,28 @@ struct AlbumsGrid: View {
             EmptyState(icon: "square.stack", text: lib.error ?? String(localized: "No albums"),
                        action: ("Refresh", { Task { await lib.load() } }))
         } else {
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 14) {
-                    ForEach(albums) { a in AlbumTile(album: a) { open(a) } }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 14) {
+                        ForEach(Array(albums.enumerated()), id: \.element.id) { i, a in
+                            AlbumTile(album: a) { open(a) }
+                                .gridHighlight(wide && selection == i)
+                                .id(a.id)
+                        }
+                    }
+                    .padding(12)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
                 }
-                .padding(12)
+                .simultaneousGesture(TapGesture().onEnded {
+                    // A click in the grid takes the keyboard from the sidebar.
+                    if wide { NSApp.keyWindow?.makeFirstResponder(nil) }
+                })
+                // The window: arrows move the highlight, Return opens the album.
+                .modifier(GridKeys(enabled: wide, count: albums.count, columns: perRow,
+                                   selection: $selection) { open(albums[$0]) })
+                .onChange(of: selection) {
+                    if let s = selection, albums.indices.contains(s) { proxy.scrollTo(albums[s].id) }
+                }
             }
         }
     }

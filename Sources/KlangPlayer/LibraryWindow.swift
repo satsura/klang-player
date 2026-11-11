@@ -6,6 +6,7 @@ import SwiftUI
 final class LibraryWindow: NSObject, NSWindowDelegate {
     static let shared = LibraryWindow()
     private var window: NSWindow?
+    private var keyMonitor: Any?
 
     var isVisible: Bool { window?.isVisible ?? false }
 
@@ -26,15 +27,46 @@ final class LibraryWindow: NSObject, NSWindowDelegate {
             host.sceneBridgingOptions = [.toolbars, .title]
             w.contentViewController = host
             if !w.setFrameUsingName("KlangLibraryWindow") { w.center() }
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak w] e in
+                guard let w, e.window === w else { return e }
+                let handled = MainActor.assumeIsolated { Self.handleKey(e, in: w) }
+                return handled ? nil : e
+            }
             w.setFrameAutosaveName("KlangLibraryWindow")
             window = w
         }
-        guard activate else { window?.orderFrontRegardless(); return }   // debug screenshots
+        guard activate else { window?.orderFrontRegardless(); window?.makeKey(); return }   // debug screenshots
         // While the window is open the app shows in the Dock and ⌘Tab.
         Presence.hiddenToMenuBar = false
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Space plays / pauses; arrows and Return go to the grid on screen. Not while typing
+    /// or while a list (sidebar, queue) has the keyboard: those use the keys themselves.
+    private static func handleKey(_ e: NSEvent, in w: NSWindow) -> Bool {
+        guard e.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return false }
+        if w.firstResponder is NSText { return false }
+        // Tab from the sidebar or the queue: the keyboard goes to the grid.
+        if e.keyCode == 48, !e.modifierFlags.contains(.shift), w.firstResponder is NSTableView,
+           let grid = GridKeyRouter.shared.handler {
+            w.makeFirstResponder(nil)
+            return grid(.tab)
+        }
+        if w.firstResponder is NSTableView { return false }
+        switch e.keyCode {
+        case 49:
+            guard Player.shared.current != nil else { return false }
+            Player.shared.toggle()
+            return true
+        case 123: return GridKeyRouter.shared.handler?(.leftArrow) ?? false
+        case 124: return GridKeyRouter.shared.handler?(.rightArrow) ?? false
+        case 125: return GridKeyRouter.shared.handler?(.downArrow) ?? false
+        case 126: return GridKeyRouter.shared.handler?(.upArrow) ?? false
+        case 36, 76: return GridKeyRouter.shared.handler?(.return) ?? false
+        default: return false
+        }
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -123,12 +155,7 @@ struct LibraryWindowView: View {
         .background {
             Button("") { searchFocused = true }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true)
         }
-        // Space plays / pauses unless a text field takes it.
-        .onKeyPress(.space) {
-            guard player.current != nil, !(NSApp.keyWindow?.firstResponder is NSText) else { return .ignored }
-            player.toggle()
-            return .handled
-        }
+
     }
 }
 
