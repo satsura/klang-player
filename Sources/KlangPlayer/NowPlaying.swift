@@ -20,7 +20,7 @@ struct NowPlayingView: View {
                     .overlay(alignment: .bottomLeading) {
                         if let t = player.current {
                             CoverBadges(hiRes: t.isHiRes, lyrics: lyrics.known[t.Id] == true ? (1, 1) : nil)
-                                .onTapGesture(perform: showLyrics)
+                                .pressable(showLyrics)
                         }
                     }
                     .overlay(alignment: .topTrailing) {
@@ -99,17 +99,18 @@ struct NowPlayingView: View {
     private var tools: some View {
         HStack(spacing: 9) {
             Button(action: showLyrics) { Image(systemName: "quote.bubble") }
-                .help("Lyrics")
+                .tip("Lyrics")
             SleepButton()
             Button { MiniPlayer.shared.toggle() } label: { Image(systemName: "pip") }
-                .help("Floating card")
+                .tip("Floating card")
             Button(action: showQueue) {
                 HStack(spacing: 3) {
                     Image(systemName: "list.bullet")
                     if !player.upcoming.isEmpty { Text("\(player.upcoming.count)").font(.system(size: 10).monospacedDigit()) }
                 }
             }
-            .help("Queue")
+            .tip("Queue")
+            .accessibilityValue(player.upcoming.isEmpty ? Text(verbatim: "") : Text("\(player.upcoming.count) next"))
         }
         .font(.system(size: 12))
         .buttonStyle(.borderless)
@@ -153,25 +154,25 @@ struct QueueView: View {
             HStack(spacing: 12) {
                 if showsBack {
                     Button(action: close) {
-                        Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold))
+                        Image(systemName: "chevron.left").hitTarget().font(.system(size: 12, weight: .semibold))
                     }
                     .accessibilityLabel(Text("Back"))
                 }
                 Text("Queue").font(.system(size: 12, weight: .semibold))
                 Spacer()
-                Button { player.shuffleUpcoming() } label: { Image(systemName: "shuffle") }
-                    .help("Shuffle what's next")
+                Button { player.shuffleUpcoming() } label: { Image(systemName: "shuffle").hitTarget() }
+                    .tip("Shuffle what's next")
                     .disabled(player.upcoming.count < 2)
                 Button { player.cycleRepeat() } label: {
-                    Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
+                    Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat").hitTarget()
                         .foregroundStyle(player.repeatMode == .off ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
                 }
-                .help(player.repeatMode == .off ? LocalizedStringKey("Repeat: off") : player.repeatMode == .all ? LocalizedStringKey("Repeat: queue") : LocalizedStringKey("Repeat: track"))
+                .tip(player.repeatMode == .off ? LocalizedStringKey("Repeat: off") : player.repeatMode == .all ? LocalizedStringKey("Repeat: queue") : LocalizedStringKey("Repeat: track"))
                 Button { player.setAutoplay(!player.autoplay) } label: {
-                    Image(systemName: "infinity")
+                    Image(systemName: "infinity").hitTarget()
                         .foregroundStyle(player.autoplay ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
                 }
-                .help(player.autoplay ? LocalizedStringKey("When the queue ends: similar music (on)") : LocalizedStringKey("When the queue ends: stop"))
+                .tip(player.autoplay ? LocalizedStringKey("When the queue ends: similar music (on)") : LocalizedStringKey("When the queue ends: stop"))
                 Menu {
                     Button("Save as Playlist…") { Task { await Library.shared.addToPlaylist(nil, tracks: player.queue) } }
                         .disabled(player.queue.isEmpty)
@@ -179,7 +180,7 @@ struct QueueView: View {
                     Divider()
                     Button("Clear What's Next") { player.clearUpcoming() }.disabled(player.upcoming.isEmpty)
                     Button("Clear Queue") { player.clearAll() }.disabled(player.queue.isEmpty)
-                } label: { Image(systemName: "ellipsis.circle") }
+                } label: { Image(systemName: "ellipsis.circle").hitTarget() }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
@@ -242,7 +243,7 @@ struct SleepButton: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Sleep timer")
+        .tip("Sleep timer")
     }
 }
 
@@ -265,6 +266,8 @@ private struct PositionSlider: View {
             }
             .controlSize(.mini)
             .disabled(player.current == nil || player.state == .preparing)
+            .accessibilityLabel(Text("Position"))
+            .accessibilityValue(Text("\(mmss(scrub ?? clock.position)) of \(mmss(player.duration))"))
             HStack {
                 Text(mmss(scrub ?? clock.position))
                 Spacer()

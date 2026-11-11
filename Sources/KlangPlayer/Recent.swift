@@ -49,7 +49,7 @@ struct ContinueCard: View {
                 Cover(url: t.artURL(size: 120), size: 48, radius: 6)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(player.state == .playing ? LocalizedStringKey("Now Playing") : LocalizedStringKey("Continue"))
-                        .font(.system(size: 9.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(.secondary)
+                        .font(.system(size: 10, weight: .semibold)).textCase(.uppercase).foregroundStyle(.secondary)
                     Text(verbatim: t.Album ?? t.Name).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
                     Text(verbatim: "\(t.artist) · " + String(localized: "track \(player.index + 1) of \(player.queue.count)"))
                         .font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
@@ -63,9 +63,9 @@ struct ContinueCard: View {
                 .accessibilityLabel(player.state == .playing ? Text("Pause") : Text("Play"))
             }
             .padding(10)
-            .glass(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .card(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .contentShape(Rectangle())
-            .onTapGesture { if let a = lib.album(for: t) { open(.album(a)) } }
+            .pressable { if let a = lib.album(for: t) { open(.album(a)) } }
         }
     }
 }
@@ -151,7 +151,7 @@ struct LinkButton: View {
                 Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
-            .glass(RoundedRectangle(cornerRadius: 10, style: .continuous), interactive: true)
+            .card(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

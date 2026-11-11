@@ -159,8 +159,8 @@ struct DiscoverView: View {
                 }
                 if let u = store.updated, !store.loading {
                     HStack {
-                        Text("Updated \(u.formatted(.relative(presentation: .named)))").font(.system(size: 9.5)).foregroundStyle(.tertiary)
-                        Button("Refresh") { Task { await store.load(force: true) } }.buttonStyle(.link).font(.system(size: 9.5))
+                        Text("Updated \(u.formatted(.relative(presentation: .named)))").font(.system(size: 10)).foregroundStyle(.tertiary)
+                        Button("Refresh") { Task { await store.load(force: true) } }.buttonStyle(.link).font(.system(size: 10))
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 10)
                 }
@@ -275,7 +275,7 @@ struct NewArtistView: View {
                                 }
                                 .buttonStyle(.borderless)
                                 .disabled(t.preview == nil)
-                                .help("30-second preview on this Mac")
+                                .tip("30-second preview on this Mac")
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(verbatim: t.title).font(.system(size: 12)).lineLimit(1)
                                     Text(verbatim: t.album?.title ?? "").font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)

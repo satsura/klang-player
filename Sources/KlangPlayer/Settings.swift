@@ -91,7 +91,7 @@ struct SettingsView: View {
                             Spacer()
                         }
                         .contentShape(Rectangle())
-                        .onTapGesture { speakerIP = s.ip }
+                        .pressable { speakerIP = s.ip }
                     }
                     Text("Speakers that accept FLAC get the original files. Others (Loewe klang and other Frontier Silicon speakers) get AAC 320.")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)

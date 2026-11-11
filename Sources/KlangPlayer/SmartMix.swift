@@ -144,11 +144,12 @@ struct SmartMixBar: View {
                 if working { ProgressView().controlSize(.small) } else {
                     Button { run(text) } label: { Image(systemName: "play.fill") }
                         .buttonStyle(.borderless)
+                        .tip("Play Mix")
                         .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
-            .glass(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .card(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .padding(.horizontal, 12)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
@@ -156,7 +157,7 @@ struct SmartMixBar: View {
                         Button { run(presetText[i]) } label: {
                             Text(presets[i]).font(.system(size: 11))
                                 .padding(.horizontal, 9).padding(.vertical, 4)
-                                .glass(Capsule(), interactive: true)
+                                .background(.fill.tertiary, in: Capsule())
                         }
                         .buttonStyle(.plain)
                         .disabled(working)

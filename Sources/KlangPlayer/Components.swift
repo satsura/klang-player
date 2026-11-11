@@ -38,8 +38,10 @@ struct Marquee: View {
     @State private var textWidth: CGFloat = 0
     @State private var boxWidth: CGFloat = 0
     @State private var start = Date()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var overflow: Bool { textWidth > boxWidth + 1 && boxWidth > 0 }
+    /// Too long for the box: scrolls (or is truncated with Reduce Motion on).
+    private var overflow: Bool { textWidth > boxWidth + 1 && boxWidth > 0 && !reduceMotion }
 
     var body: some View {
         Text(verbatim: text)
@@ -84,6 +86,9 @@ struct Marquee: View {
             }
             .contentShape(Rectangle())
             .onChange(of: text) { start = Date() }
+            // One element with the plain text for VoiceOver, not the scrolling copies.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: text))
     }
 }
 
@@ -91,7 +96,7 @@ struct Badge: View {
     let text: String
     var body: some View {
         Text(text)
-            .font(.system(size: 9, weight: .semibold))
+            .font(.system(size: 10, weight: .semibold))
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
             .foregroundStyle(.secondary)
@@ -224,17 +229,17 @@ struct TrackRow: View {
             Spacer(minLength: 4)
             // Marks: popular on Last.fm, ♥, has lyrics (filled = timed).
             if lib.isPopular(track) {
-                Image(systemName: "flame.fill").font(.system(size: 9)).foregroundStyle(.orange.opacity(0.85))
-                    .help("Popular on Last.fm")
+                Image(systemName: "flame.fill").font(.system(size: 10)).foregroundStyle(.orange.opacity(0.85))
+                    .tip("Popular on Last.fm")
             }
             if lib.isFavorite(track.Id, server: track.isFavorite) {
-                Image(systemName: "heart.fill").font(.system(size: 8.5)).foregroundStyle(.pink.opacity(0.8))
+                Image(systemName: "heart.fill").font(.system(size: 10)).foregroundStyle(.pink.opacity(0.8))
             }
             if lyrics.known[track.Id] == true {
                 Image(systemName: lyrics.synced.contains(track.Id) ? "quote.bubble.fill" : "quote.bubble")
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
-                    .help(lyrics.synced.contains(track.Id) ? LocalizedStringKey("Timed lyrics") : LocalizedStringKey("Lyrics"))
+                    .tip(lyrics.synced.contains(track.Id) ? LocalizedStringKey("Timed lyrics") : LocalizedStringKey("Lyrics"))
             }
             Text(mmss(track.duration))
                 .font(.system(size: 11).monospacedDigit())
@@ -244,7 +249,7 @@ struct TrackRow: View {
         .padding(.vertical, showArtist ? 4 : 5)
         .hoverable(active: isCurrent)
         .onHover { hover = $0 }
-        .onTapGesture(count: 1, perform: play)
+        .pressable(play)
         .contextMenu {
             Button("Play") { play() }
             Button("Play Next") { player.playNext([track]) }
@@ -263,7 +268,27 @@ struct TrackRow: View {
     }
 }
 
+extension Image {
+    /// At least 22×22 pt to click, however small the symbol.
+    func hitTarget() -> some View { frame(minWidth: 22, minHeight: 22).contentShape(Rectangle()) }
+}
+
 extension View {
+    /// Tap to act, and the same for VoiceOver: one element read as a button, activated with VO-Space.
+    func pressable(_ action: @escaping () -> Void) -> some View {
+        onTapGesture(perform: action)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default, action)
+    }
+
+    /// Tooltip that is also the VoiceOver label (icon-only controls).
+    func tip(_ key: LocalizedStringKey) -> some View { help(Text(key)).accessibilityLabel(Text(key)) }
+    func tip(_ text: Text) -> some View { help(text).accessibilityLabel(text) }
+
+    /// Background of a card in the content (glass is for controls floating above it).
+    func card<S: Shape>(_ shape: S) -> some View { background(.fill.quaternary, in: shape) }
+
     /// Liquid Glass on macOS 26+, a translucent material before.
     /// `overImage`: the clear variant for controls that sit on artwork.
     @ViewBuilder
@@ -331,11 +356,13 @@ struct GlassIconButton: View {
 struct AmbientArt: View {
     let url: URL?
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Color.clear
             .overlay {
-                if let url, !reduceTransparency {
+                if let url, !reduceTransparency, contrast != .increased {
                     AsyncImage(url: url) { $0.image?.resizable().aspectRatio(contentMode: .fill) }
                         .id(url)
                         .blur(radius: 50)
@@ -347,6 +374,6 @@ struct AmbientArt: View {
             .mask(LinearGradient(colors: [.black, .black.opacity(0.3)], startPoint: .top, endPoint: .bottom))
             .clipped()
             .allowsHitTesting(false)
-            .animation(.easeInOut(duration: 0.6), value: url)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.6), value: url)
     }
 }

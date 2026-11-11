@@ -15,11 +15,11 @@ struct CoverBadges: View {
                     Image(systemName: "quote.bubble.fill")
                     if l.of > 1 { Text(verbatim: "\(l.found)/\(l.of)") }
                 })
-                .help(Text("Lyrics: \(l.found) of \(l.of) tracks"))
+                .tip(Text("Lyrics: \(l.found) of \(l.of) tracks"))
             }
             if favorite { badge(Image(systemName: "heart.fill").foregroundStyle(.pink)) }
         }
-        .font(.system(size: 8.5, weight: .bold))
+        .font(.system(size: 10, weight: .bold))
         .padding(4)
     }
 
@@ -63,8 +63,8 @@ struct CoverPicker: View {
                                     Cover(url: c.thumb, size: 104, radius: 6)
                                     if saving == c.id { ProgressView().controlSize(.small) }
                                 }
-                                Text(verbatim: c.title).font(.system(size: 9.5)).lineLimit(2)
-                                Text(verbatim: c.source).font(.system(size: 9)).foregroundStyle(.tertiary)
+                                Text(verbatim: c.title).font(.system(size: 10)).lineLimit(2)
+                                Text(verbatim: c.source).font(.system(size: 10)).foregroundStyle(.tertiary)
                             }
                             .frame(width: 104)
                         }
@@ -122,7 +122,7 @@ struct AboutSection: View {
                         Button(expanded ? LocalizedStringKey("Less") : LocalizedStringKey("More")) { expanded.toggle() }
                             .buttonStyle(.link).font(.system(size: 10.5))
                         ForEach(info?.tags ?? [], id: \.self) { tag in
-                            Text(verbatim: tag).font(.system(size: 9.5)).foregroundStyle(.secondary)
+                            Text(verbatim: tag).font(.system(size: 10)).foregroundStyle(.secondary)
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .overlay(Capsule().strokeBorder(.secondary.opacity(0.4), lineWidth: 0.7))
                         }

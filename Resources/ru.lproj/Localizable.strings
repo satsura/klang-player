@@ -254,3 +254,7 @@
 "Volume Down" = "Тише";
 "Show All: %lld" = "Показать все: %lld";
 "Show Less" = "Свернуть";
+"Play Mix" = "Играть микс";
+"Position" = "Позиция";
+"%@ of %@" = "%1$@ из %2$@";
+"%lld next" = "%lld дальше";

@@ -70,11 +70,11 @@ struct LibraryWindowView: View {
                     Button {
                         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                     } label: { Image(systemName: "gearshape") }
-                    .help("Settings")
+                    .tip("Settings")
                     Spacer()
                     if AppMode(rawValue: mode)?.usesMenuBar ?? true {
                         Button { Presence.hideToMenuBar() } label: { Image(systemName: "menubar.arrow.up.rectangle") }
-                            .help("Hide to Menu Bar")
+                            .tip("Hide to Menu Bar")
                     }
                 }
                 .buttonStyle(.borderless)
@@ -103,7 +103,7 @@ struct LibraryWindowView: View {
             .frame(width: 520, height: 480)
         }
         .background {
-            Button("") { searchFocused = true }.keyboardShortcut("f", modifiers: .command).opacity(0)
+            Button("") { searchFocused = true }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true)
         }
         // Space plays / pauses unless a text field takes it.
         .onKeyPress(.space) {

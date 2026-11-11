@@ -141,7 +141,7 @@ struct LyricsView: View {
                 if foreignLanguage != nil {
                     Toggle(isOn: $translate) { Label("Translation", systemImage: "translate") }
                         .toggleStyle(.button).controlSize(.small).padding(.trailing, 12)
-                        .help("Translate with macOS (on this Mac)")
+                        .tip("Translate with macOS (on this Mac)")
                 }
             }
             Group {
@@ -169,7 +169,7 @@ struct LyricsView: View {
                 }
             }
             .frame(maxHeight: .infinity)
-            Text("Lyrics: lrclib.net").font(.system(size: 9)).foregroundStyle(.tertiary).padding(.bottom, 4)
+            Text("Lyrics: lrclib.net").font(.system(size: 10)).foregroundStyle(.tertiary).padding(.bottom, 4)
         }
         .modifier(TranslateLines(lines: showTranslation ? lineTexts : [], source: foreignLanguage, target: Self.appLanguage) {
             translated = $0
@@ -203,7 +203,7 @@ struct LyricsView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
-                        .onTapGesture { player.seek(to: line.time) }
+                        .pressable { player.seek(to: line.time) }
                         .id(line.id)
                     }
                 }

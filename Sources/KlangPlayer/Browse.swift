@@ -73,13 +73,14 @@ struct ContentView: View {
         }
         .opacity(0)
         .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private var footer: some View {
         HStack(spacing: 10) {
-            Button { overlay = overlay == .settings ? nil : .settings } label: { Image(systemName: "gearshape") }
+            Button { overlay = overlay == .settings ? nil : .settings } label: { Image(systemName: "gearshape").hitTarget() }
                 .buttonStyle(.borderless)
-                .help("Settings")
+                .tip("Settings")
             if lib.loading {
                 ProgressView().controlSize(.mini)
             }
@@ -93,12 +94,12 @@ struct ContentView: View {
                 speakerMenu
             }
             Spacer()
-            Button { StatusBar.shared.openWindow() } label: { Image(systemName: "macwindow") }
+            Button { StatusBar.shared.openWindow() } label: { Image(systemName: "macwindow").hitTarget() }
                 .buttonStyle(.borderless)
-                .help("Open in Window")
-            Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }
+                .tip("Open in Window")
+            Button { NSApp.terminate(nil) } label: { Image(systemName: "power").hitTarget() }
                 .buttonStyle(.borderless)
-                .help("Quit")
+                .tip("Quit")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -273,7 +274,7 @@ struct AlbumTile: View {
         .frame(width: 112)
         .contentShape(Rectangle())
         .onHover { hover = $0 }
-        .onTapGesture(perform: open)
+        .pressable(open)
         .contextMenu {
             Button("Play") { Task { if let t = try? await lib.tracks(for: album) { player.play(t) } } }
             Button("Shuffle") { Task { if let t = try? await lib.tracks(for: album) { player.play(t.shuffled()) } } }
@@ -418,7 +419,7 @@ struct CollectionHeader: View {
                                 .foregroundStyle(favorite.isOn ? Color.pink : .secondary)
                         }
                         .buttonStyle(.borderless)
-                        .help(favorite.isOn ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Add to Favorites"))
+                        .tip(favorite.isOn ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Add to Favorites"))
                     }
                 }
                 .controlSize(.small)
@@ -474,7 +475,7 @@ struct ArtistRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 5)
         .hoverable()
-        .onTapGesture(perform: open)
+        .pressable(open)
     }
 }
 
@@ -525,7 +526,7 @@ struct ArtistView: View {
                             if let a = similar.first(where: { $0.name == name })?.local { open(.artist(a)) } else { open(.newArtist(name)) }
                         }
                         .padding(.horizontal, 14)
-                        Text("Highlighted: in your library").font(.system(size: 9.5)).foregroundStyle(.tertiary).padding(.horizontal, 14).padding(.top, 4)
+                        Text("Highlighted: in your library").font(.system(size: 10)).foregroundStyle(.tertiary).padding(.horizontal, 14).padding(.top, 4)
                     }
                 }
                 .padding(.bottom, 12)
@@ -722,7 +723,7 @@ struct FolderRow: View {
                     Image(systemName: "play.circle.fill").font(.system(size: 16))
                 }
                 .buttonStyle(.borderless)
-                .help("Play Folder")
+                .tip("Play Folder")
             } else if let n = folder.ChildCount {
                 Text("\(n)").font(.system(size: 10.5).monospacedDigit()).foregroundStyle(.tertiary)
             }
@@ -732,7 +733,7 @@ struct FolderRow: View {
         .padding(.vertical, 4)
         .hoverable()
         .onHover { hover = $0 }
-        .onTapGesture(perform: open)
+        .pressable(open)
         .contextMenu {
             Button("Play Folder") { Task { await play(shuffle: false) } }
             Button("Shuffle") { Task { await play(shuffle: true) } }
@@ -809,7 +810,7 @@ struct PlaylistTile: View {
         .frame(width: 112)
         .contentShape(Rectangle())
         .onHover { hover = $0 }
-        .onTapGesture(perform: open)
+        .pressable(open)
     }
 }
 

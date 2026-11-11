@@ -184,12 +184,13 @@ struct BrowserView: View {
 struct TabBar: View {
     @ObservedObject var state: BrowserState
     @Namespace private var ns
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(Tab.popover) { t in
                 let on = state.tab == t
-                Button { withAnimation(.snappy(duration: 0.25)) { state.select(t) } } label: {
+                Button { withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { state.select(t) } } label: {
                     HStack(spacing: 5) {
                         Image(systemName: on ? t.selectedIcon : t.icon)
                             .font(.system(size: 13, weight: .medium))

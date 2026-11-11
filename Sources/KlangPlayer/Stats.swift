@@ -103,7 +103,7 @@ struct StatsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .glass(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .card(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func row(rank: Int, title: String, subtitle: String?, plays: Int, max: Int, tap: @escaping () -> Void) -> some View {
