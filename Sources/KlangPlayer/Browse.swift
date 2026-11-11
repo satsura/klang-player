@@ -278,8 +278,9 @@ struct AlbumTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             ZStack(alignment: .bottomTrailing) {
-                Cover(url: Emby.shared.imageURL(itemId: album.imageItemId, tag: album.imageTag, size: 260), size: 112)
+                Cover(url: lib.coverURL(album, size: 260), size: 112)
                     .shadow(color: .black.opacity(hover ? 0.3 : 0.12), radius: hover ? 6 : 3, y: 2)
+                    .task(id: album.Id) { await lib.loadTrackCover(album) }
                 if hover {
                     Button {
                         Task { if let t = try? await lib.tracks(for: album) { player.play(t) } }
@@ -349,7 +350,7 @@ struct AlbumView: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         CollectionHeader(
-                            cover: Emby.shared.imageURL(itemId: album.imageItemId, tag: album.imageTag, size: 300) ?? tracks.first?.artURL(size: 300),
+                            cover: lib.coverURL(album, size: 300) ?? tracks.first(where: { $0.ImageTags?["Primary"] != nil })?.artURL(size: 300),
                             title: album.Name,
                             subtitle: [album.artist, album.ProductionYear.map(String.init) ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
                             detail: tracks.isEmpty ? nil : String(localized: "\(tracks.count) tracks") + " · \(totalDuration(tracks)) · \(tracks.first?.sourceLabel ?? "")",
@@ -478,13 +479,15 @@ struct ArtistsList: View {
 }
 
 struct ArtistRow: View {
+    @ObservedObject var lib = Library.shared
     let artist: Artist
     let open: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
-            Cover(url: Emby.shared.imageURL(itemId: artist.cover?.imageItemId, tag: artist.cover?.imageTag, size: 90),
+            Cover(url: artist.cover.flatMap { lib.coverURL($0, size: 90) },
                   size: 34, radius: 17, placeholder: "music.mic")
+                .task(id: artist.id) { if let c = artist.cover { await lib.loadTrackCover(c) } }
             VStack(alignment: .leading, spacing: 1) {
                 Text(artist.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
                 Text("\(artist.albums.count) albums")

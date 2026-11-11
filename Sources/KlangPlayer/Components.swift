@@ -192,7 +192,7 @@ struct TrackRow: View {
         HStack(spacing: 10) {
             ZStack {
                 if showCover {
-                    Cover(url: track.artURL(size: 80), size: 30)
+                    Cover(url: track.artURL(size: 80) ?? lib.album(for: track).flatMap { lib.coverURL($0, size: 80) }, size: 30)
                         .opacity(hover ? 0.35 : 1)
                 }
                 if hover {

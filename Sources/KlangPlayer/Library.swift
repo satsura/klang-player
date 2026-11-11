@@ -4,7 +4,7 @@ struct Artist: Identifiable, Hashable {
     let name: String
     let albums: [Album]
     var id: String { name }
-    var cover: Album? { albums.first { $0.imageTag != nil } }
+    var cover: Album? { albums.first { $0.imageTag != nil } ?? albums.first }
 }
 
 @MainActor
@@ -93,6 +93,24 @@ final class Library: ObservableObject {
         let on = !isFavorite(t.Id, server: t.isFavorite)
         toggleFavorite(t.Id, current: !on)
         LastFM.shared.love(t, on)
+    }
+
+    /// Albums without a cover in Emby: the picture embedded in their first track.
+    @Published private(set) var trackCovers: [String: URL] = [:]
+    private var trackCoverChecked = Set<String>()
+
+    /// Cover to show for an album: its own, or (once loaded) one from its tracks.
+    func coverURL(_ a: Album, size: Int) -> URL? {
+        if let tag = Covers.changed[a.imageItemId] { return Emby.shared.imageURL(itemId: a.imageItemId, tag: tag, size: size) }
+        return Emby.shared.imageURL(itemId: a.imageItemId, tag: a.imageTag, size: size) ?? trackCovers[a.Id]
+    }
+
+    /// For an album without a cover, looks for a track with its own picture (once per album).
+    func loadTrackCover(_ a: Album) async {
+        guard a.imageTag == nil, Covers.changed[a.imageItemId] == nil, trackCoverChecked.insert(a.Id).inserted,
+              let tracks = try? await tracks(for: a),
+              let url = tracks.first(where: { $0.ImageTags?["Primary"] != nil })?.artURL(size: 260) else { return }
+        trackCovers[a.Id] = url
     }
 
     /// The album (or merged compilation) a track belongs to.
