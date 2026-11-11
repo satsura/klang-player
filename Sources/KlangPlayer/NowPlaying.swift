@@ -192,19 +192,32 @@ struct QueueView: View {
             Divider()
             if player.queue.isEmpty {
                 EmptyState(icon: "list.bullet", text: String(localized: "Queue is empty"))
+                    .dropDestination(for: DragItems.self) { items, _ in
+                        Task { player.play(await DragItems.tracks(items)) }
+                        return true
+                    }
             } else {
                 ScrollViewReader { proxy in
                     // List: drag tracks to reorder.
                     List {
                         ForEach(Array(player.queue.enumerated()), id: \.offset) { i, t in
                             TrackRow(track: t, showArtist: true, showCover: true,
-                                     onRemove: i == player.index ? nil : { player.undoable(String(localized: "Remove from Queue"), undo) { player.remove(at: i) } }) { player.jump(to: i) }
+                                     onRemove: i == player.index ? nil : { player.undoable(String(localized: "Remove from Queue"), undo) { player.remove(at: i) } },
+                                     dragsOut: false) { player.jump(to: i) }
                                 .opacity(i < player.index ? 0.45 : 1)
                                 .listRowInsets(EdgeInsets())
                                 .listRowSeparator(.hidden)
                                 .id(i)
                         }
                         .onMove { from, to in player.undoable(String(localized: "Move"), undo) { player.move(from: from, to: to) } }
+                        // Albums and tracks dragged from the library go in where they're dropped.
+                        .dropDestination(for: DragItems.self) { items, offset in
+                            Task {
+                                let tracks = await DragItems.tracks(items)
+                                guard !tracks.isEmpty else { return }
+                                player.undoable(String(localized: "Add to Queue"), undo) { player.insert(tracks, at: offset) }
+                            }
+                        }
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)

@@ -294,6 +294,7 @@ struct AlbumTile: View {
         .contentShape(Rectangle())
         .onHover { hover = $0 }
         .pressable(open)
+        .draggable(DragItems(albumIds: [album.Id]))
         .contextMenu {
             Button("Play") { Task { if let t = try? await lib.tracks(for: album) { player.play(t) } } }
             Button("Shuffle") { Task { if let t = try? await lib.tracks(for: album) { player.play(t.shuffled()) } } }
@@ -817,6 +818,7 @@ struct PlaylistTile: View {
     let playlist: FolderEntry
     let open: () -> Void
     @State private var hover = false
+    @State private var dropTarget = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -830,6 +832,15 @@ struct PlaylistTile: View {
         .contentShape(Rectangle())
         .onHover { hover = $0 }
         .pressable(open)
+        // Drop albums or tracks here to add them to the playlist.
+        .gridHighlight(dropTarget)
+        .dropDestination(for: DragItems.self) { items, _ in
+            Task {
+                let tracks = await DragItems.tracks(items)
+                await Library.shared.addToPlaylist(playlist, tracks: tracks)
+            }
+            return true
+        } isTargeted: { dropTarget = $0 }
     }
 }
 

@@ -377,4 +377,30 @@ final class QueueUndoTests: XCTestCase {
         XCTAssertEqual(p.queue.count, 5)
         XCTAssertEqual(p.current?.Id, "t1")
     }
+
+    func testInsertDroppedTracks() {
+        Player.persistQueue = false
+        let p = Player.shared
+        p.preview(tracks(3))
+        let extra = try! JSONDecoder().decode([Track].self, from: Data(#"[{"Id":"x1","Name":"X1"},{"Id":"x2","Name":"X2"}]"#.utf8))
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        undo.beginUndoGrouping()
+        p.undoable("Add to Queue", undo) { p.insert(extra, at: 0) }   // before the current track
+        undo.endUndoGrouping()
+        XCTAssertEqual(p.queue.map(\.Id), ["x1", "x2", "t1", "t2", "t3"])
+        XCTAssertEqual(p.current?.Id, "t1")
+        undo.undo()
+        XCTAssertEqual(p.queue.map(\.Id), ["t1", "t2", "t3"])
+        p.insert(extra, at: 99)                         // past the end: appended
+        XCTAssertEqual(p.queue.map(\.Id).suffix(2), ["x1", "x2"])
+        XCTAssertEqual(p.current?.Id, "t1")
+    }
+
+    func testDragItemsRoundTrip() throws {
+        let items = DragItems(albumIds: ["a1"], tracks: tracks(2))
+        let back = try JSONDecoder().decode(DragItems.self, from: JSONEncoder().encode(items))
+        XCTAssertEqual(back.albumIds, ["a1"])
+        XCTAssertEqual(back.tracks.map(\.Id), ["t1", "t2"])
+    }
 }

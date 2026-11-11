@@ -124,6 +124,15 @@ final class Player: ObservableObject {
         if wasLast { requeueNext() }
     }
 
+    /// Dropped into the queue at a position; the current track keeps playing.
+    func insert(_ tracks: [Track], at i: Int) {
+        guard current != nil else { play(tracks); return }
+        let at = min(max(0, i), queue.count)
+        queue.insert(contentsOf: tracks, at: at)
+        if at <= index { index += tracks.count }
+        requeueNext()
+    }
+
     func jump(to i: Int) {
         guard queue.indices.contains(i) else { return }
         Task { await startTrack(i) }

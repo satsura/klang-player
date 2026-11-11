@@ -194,6 +194,8 @@ struct TrackRow: View {
     var showArtist = false
     var showCover = false
     var onRemove: (() -> Void)? = nil
+    /// Can be dragged to the queue or a playlist (not the queue's own rows: those reorder).
+    var dragsOut = true
     let play: () -> Void
 
     @State private var hover = false
@@ -257,6 +259,7 @@ struct TrackRow: View {
         .hoverable(active: isCurrent)
         .onHover { hover = $0 }
         .pressable(play)
+        .draggable(if: dragsOut, DragItems(tracks: [track]))
         .contextMenu {
             Button("Play") { play() }
             Button("Play Next") { player.playNext([track]) }
