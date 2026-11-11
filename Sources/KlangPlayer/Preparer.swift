@@ -67,7 +67,9 @@ actor Preparer {
             return Prepared(source: .file(out), mime: "audio/mpeg")
         }
 
-        let out = dir.appendingPathComponent("\(t.Id).m4a")
+        // Normalized files get their own name, so turning the setting on or off converts again.
+        let normalize = Config.normalizeLoudness
+        let out = dir.appendingPathComponent(normalize ? "\(t.Id)-n.m4a" : "\(t.Id).m4a")
         if fm.fileExists(atPath: out.path) {
             touch(out)
             return Prepared(source: .file(out), mime: "audio/mp4")
@@ -75,12 +77,22 @@ actor Preparer {
 
         let src = dir.appendingPathComponent("\(t.Id).src.\(t.container)")
         let part = dir.appendingPathComponent("\(t.Id).part.m4a")
+        let leveled = dir.appendingPathComponent("\(t.Id).src.wav")
         defer {
             try? fm.removeItem(at: src)
             try? fm.removeItem(at: part)
+            try? fm.removeItem(at: leveled)
         }
         try await download(Emby.shared.originalURL(t), to: src, progress: progress)
         progress(.converting)
+
+        // Loudness: measure (EBU R128) and level to the target before encoding.
+        var input = src
+        if normalize, let r = try? Loudness.measure(src), abs(r.gainDB) >= 0.5,
+           (try? Loudness.apply(r.gainDB, from: src, to: leveled)) != nil {
+            debugLog(String(format: "loudness %@: %.1f LUFS, gain %+.1f dB", t.Name, r.lufs, r.gainDB))
+            input = leveled
+        }
 
         var format = "aac"
         if let sr = t.sampleRate, sr > 48_000 {
@@ -88,7 +100,7 @@ actor Preparer {
         }
         let ok = await run("/usr/bin/afconvert", [
             "-f", "m4af", "-d", format, "-b", "\(Config.aacBitrate)", "-q", "127", "-s", "0",
-            src.path, part.path,
+            input.path, part.path,
         ])
         if ok, fm.fileExists(atPath: part.path) {
             try? fm.removeItem(at: out)
@@ -142,7 +154,9 @@ actor Preparer {
         }
         items.removeAll { partial($0.url) }
         var total = items.reduce(0) { $0 + $1.size }
-        let removable = items.filter { !keep.contains($0.url.deletingPathExtension().lastPathComponent) }
+        let removable = items.filter {
+            !keep.contains($0.url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "-n", with: ""))
+        }
         for i in removable.sorted(by: { $0.date < $1.date }) where total > Config.cacheLimitBytes {
             try? fm.removeItem(at: i.url)
             total -= i.size

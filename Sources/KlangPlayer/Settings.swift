@@ -29,6 +29,8 @@ struct SettingsView: View {
     @State private var lfmState: String?
     @State private var lfmConnecting = false
     @State private var coverState: String?
+    @State private var normalize = Config.normalizeLoudness
+    @State private var autoplay = Player.shared.autoplay
     @State private var coverRunning = false
     private let startLanguage = Config.language
 
@@ -93,6 +95,17 @@ struct SettingsView: View {
                     Text("Speakers that accept FLAC get the original files. Others (Loewe klang and other Frontier Silicon speakers) get AAC 320.")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+
+                group("Playback", icon: "waveform") {
+                    Toggle("Level loudness (EBU R128)", isOn: $normalize)
+                        .font(.system(size: 12))
+                        .onChange(of: normalize) { Config.normalizeLoudness = normalize }
+                    Text("Brings tracks converted for the speaker to the same loudness, so albums and compilations don't jump in volume. Speakers that get original FLAC files play them as they are.")
+                        .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                    Toggle("When the queue ends, play similar music", isOn: $autoplay)
+                        .font(.system(size: 12))
+                        .onChange(of: autoplay) { player.setAutoplay(autoplay) }
                 }
 
                 group("Last.fm", icon: "music.note.list") {

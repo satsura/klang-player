@@ -40,6 +40,21 @@ final class Player: ObservableObject {
     var current: Track? { queue.indices.contains(index) ? queue[index] : nil }
     var upcoming: ArraySlice<Track> { index + 1 < queue.count ? queue[(index + 1)...] : [] }
 
+    enum RepeatMode: String { case off, all, one }
+    @Published private(set) var repeatMode = RepeatMode(rawValue: UserDefaults.standard.string(forKey: "repeatMode") ?? "") ?? .off
+    /// When the queue runs out, keep playing similar music from the library.
+    @Published private(set) var autoplay = UserDefaults.standard.object(forKey: "autoplay") as? Bool ?? true
+    private var radioLoading = false
+
+    /// The track that plays after the current one: on its own (`natural`) or with ⏭.
+    private func followingIndex(natural: Bool) -> Int? {
+        guard !queue.isEmpty else { return nil }
+        if natural && repeatMode == .one && queue.indices.contains(index) { return index }
+        if index + 1 < queue.count { return index + 1 }
+        return repeatMode == .all ? 0 : nil
+    }
+    var hasNext: Bool { followingIndex(natural: false) != nil }
+
     /// What the speaker gets for each track; `file` is set for files served by this Mac.
     private var urls: [String: (url: String, mime: String, file: URL?)] = [:]
     private var generation = 0                   // bumps on every explicit track start
@@ -155,8 +170,54 @@ final class Player: ObservableObject {
     }
 
     func next() {
+        guard let n = followingIndex(natural: false) else { return }
+        Task { await startTrack(n) }
+    }
+
+    // MARK: Queue editing
+
+    func cycleRepeat() {
+        repeatMode = switch repeatMode { case .off: .all; case .all: .one; case .one: .off }
+        UserDefaults.standard.set(repeatMode.rawValue, forKey: "repeatMode")
+        requeueNext()
+    }
+
+    func setAutoplay(_ on: Bool) {
+        autoplay = on
+        UserDefaults.standard.set(on, forKey: "autoplay")
+        requeueNext()
+    }
+
+    /// Shuffles what comes after the current track.
+    func shuffleUpcoming() {
         guard index + 1 < queue.count else { return }
-        Task { await startTrack(index + 1) }
+        queue.replaceSubrange((index + 1)..., with: queue[(index + 1)...].shuffled())
+        requeueNext()
+    }
+
+    /// Drag and drop in the queue; the current track stays current.
+    func move(from source: IndexSet, to destination: Int) {
+        var items = Array(queue.enumerated())
+        items.move(fromOffsets: source, toOffset: destination)
+        queue = items.map(\.element)
+        if let i = items.firstIndex(where: { $0.offset == index }) { index = i }
+        requeueNext()
+    }
+
+    /// Stops playback and puts the speaker into standby.
+    func turnOffSpeaker() {
+        if state == .playing || state == .preparing { stop() }
+        Task { await run { try await Speaker.shared.setPower(false) } }
+    }
+
+    /// Stops and empties the whole queue (also the saved one).
+    func clearAll() {
+        stop()
+        queue = []
+        index = -1
+        position = 0
+        duration = 0
+        UserDefaults.standard.removeObject(forKey: "savedQueue")
     }
 
     func previous() {
@@ -289,16 +350,25 @@ final class Player: ObservableObject {
     /// Prepares the following track and hands it to the speaker for a gapless switch,
     /// then converts a few more tracks ahead in the background.
     private func queueNext(_ gen: Int) async {
+        // Last track and autoplay on: add similar music first, so it follows without a gap.
+        if followingIndex(natural: true) == nil, autoplay, !sleepAfterTrack, !radioLoading, let seed = current {
+            radioLoading = true
+            let more = await Radio.similar(to: seed, excluding: Set(queue.suffix(200).map(\.Id)))
+            radioLoading = false
+            if gen == generation, !more.isEmpty, followingIndex(natural: true) == nil {
+                queue.append(contentsOf: more)
+                debugLog("radio: added \(more.count) after \(seed.Name)")
+            }
+        }
         prefetchAhead()
-        let ni = index + 1
-        guard queue.indices.contains(ni), !sleepAfterTrack else {
+        guard let ni = followingIndex(natural: true), !sleepAfterTrack else {
             // Nothing follows: make sure the speaker has no next track left from an earlier queue.
             if gen == generation { try? await Speaker.shared.setNext("", meta: "") }
             return
         }
         let t = queue[ni]
         guard let (url, mime) = try? await urlFor(t), gen == generation,
-              queue.indices.contains(index + 1), queue[index + 1].Id == t.Id else { return }
+              followingIndex(natural: true) == ni, queue[ni].Id == t.Id else { return }
         try? await Speaker.shared.setNext(url, meta: didl(t, url: url, mime: mime))
     }
 
@@ -400,9 +470,10 @@ final class Player: ObservableObject {
 
         // The speaker switched to the next track on its own (gapless).
         // The same track twice in a row has the same URL: then only a restart of the time counts.
-        if index + 1 < queue.count, let nu = urls[queue[index + 1].Id], info.uri == nu.url,
-           queue[index + 1].Id != current?.Id || info.rel + 3 < lastPosition {
-            index += 1
+        if let ni = followingIndex(natural: true), let nu = urls[queue[ni].Id], info.uri == nu.url,
+           queue[ni].Id != current?.Id || info.rel + 3 < lastPosition {
+            if ni == index { Reporter.shared.stopped(at: duration) }  // repeat one: the same track again
+            index = ni
             position = info.rel
             lastPosition = info.rel
             duration = queue[index].duration
@@ -456,8 +527,8 @@ final class Player: ObservableObject {
                 state = .idle
                 keepAwake(false)
                 if index + 1 < queue.count { index += 1; position = 0; duration = queue[index].duration }
-            } else if nearEnd && index + 1 < queue.count {
-                await startTrack(index + 1)
+            } else if nearEnd, let ni = followingIndex(natural: true) {
+                await startTrack(ni)
             } else {
                 Reporter.shared.stopped(at: nearEnd ? duration : lastPosition)
                 state = .idle
@@ -565,7 +636,8 @@ final class Player: ObservableObject {
     /// After an app restart the speaker may still be playing a track of the saved queue:
     /// pick it up (position, state, next track) instead of showing it as stopped.
     func adoptSpeaker(attempt: Int = 1) async {
-        guard state == .idle else { return }
+        // Only the real app instance picks up the speaker (debug runs must not hand it their URLs).
+        guard state == .idle, Self.persistQueue else { return }
         let info: PositionInfo
         let ts: String
         do {
@@ -597,7 +669,9 @@ final class Player: ObservableObject {
             return
         }
         // Our URLs end in /t/<id>.<ext> (converted) or contain /Audio/<id>/ (original from Emby).
-        func matches(_ t: Track) -> Bool { info.uri.contains("/t/\(t.Id).") || info.uri.contains("/Audio/\(t.Id)/") }
+        func matches(_ t: Track) -> Bool {
+            info.uri.contains("/t/\(t.Id).") || info.uri.contains("/t/\(t.Id)-n.") || info.uri.contains("/Audio/\(t.Id)/")
+        }
         let order = Array(queue.indices.dropFirst(max(0, index))) + Array(queue.indices.prefix(max(0, index)))
         guard let i = order.first(where: { matches(queue[$0]) }) else {
             // Not in the saved queue (or there's none): if it's one of our tracks, queue its album.
@@ -641,11 +715,11 @@ final class Player: ObservableObject {
 
     /// Track id from one of our URLs: …/t/<id>.m4a or …/Audio/<id>/stream…
     nonisolated static func trackId(in uri: String) -> String? {
-        for pattern in [#"/t/([A-Za-z0-9]+)\."#, #"/Audio/([A-Za-z0-9]+)/"#] {
+        for pattern in [#"/t/([A-Za-z0-9]+)(-n)?\."#, #"/Audio/([A-Za-z0-9]+)/"#] {
             if let r = uri.range(of: pattern, options: .regularExpression) {
                 let m = String(uri[r])
                 return m.split(separator: "/").map(String.init).first { $0 != "t" && $0 != "Audio" }?
-                    .components(separatedBy: ".").first
+                    .components(separatedBy: CharacterSet(charactersIn: ".-")).first
             }
         }
         return nil

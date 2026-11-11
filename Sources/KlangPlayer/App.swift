@@ -58,7 +58,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
-        if !args.contains("--discover") && !args.contains("--relocate") {
+        // Headless debug runs: no menu bar, no restoring the queue, never touch the speaker.
+        let headless = ["--discover", "--relocate", "--prepare", "--fill-covers"].contains(where: args.contains)
+        if !headless {
             Task { @MainActor in
                 if !args.contains("--selftest") && !args.contains("--preview") {
                     Player.shared.restoreQueue()
@@ -134,6 +136,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 self.window = w
             }
+        }
+        // Debug: the large window without taking focus (with --preview: no speaker).
+        if args.contains("--library") {
+            Task { @MainActor in LibraryWindow.shared.show(activate: false) }
         }
         // Debug: fake a queue in the UI without touching the speaker (KlangPlayer --preview [--card]).
         if args.contains("--preview") {

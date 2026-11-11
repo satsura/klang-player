@@ -249,6 +249,7 @@ struct TrackRow: View {
             Button("Play") { play() }
             Button("Play Next") { player.playNext([track]) }
             Button("Add to Queue") { player.enqueue([track]) }
+            AddToPlaylistMenu { [track] }
             Divider()
             let fav = Library.shared.isFavorite(track.Id, server: track.isFavorite)
             Button(fav ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Add to Favorites")) {
@@ -258,6 +259,18 @@ struct TrackRow: View {
                 Divider()
                 Button("Remove from Queue", action: onRemove)
             }
+        }
+    }
+}
+
+extension View {
+    /// Liquid Glass on macOS 26+, a translucent material before.
+    @ViewBuilder
+    func glass<S: Shape>(_ shape: S, interactive: Bool = false) -> some View {
+        if #available(macOS 26, *) {
+            self.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+        } else {
+            self.background(.ultraThinMaterial, in: shape)
         }
     }
 }

@@ -251,11 +251,13 @@ struct MiniPlayerView: View {
                         .frame(height: 3)
                         .padding(.top, 2)
                     HStack(spacing: s * 0.08) {
-                        Spacer()
                         controls(play: max(16, s * 0.085))
-                        Spacer()
                     }
                     .font(.system(size: max(12, s * 0.055)))
+                    .padding(.horizontal, s * 0.06)
+                    .padding(.vertical, s * 0.022)
+                    .glass(Capsule(), interactive: true)
+                    .frame(maxWidth: .infinity)
                 }
                 .foregroundStyle(.white)
                 .padding(s * 0.05)
@@ -280,7 +282,7 @@ struct MiniPlayerView: View {
                     }
                     .font(.system(size: max(10, s * 0.038)))
                     .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(.black.opacity(0.45), in: Capsule())
+                    .glass(Capsule())
                     .padding(.horizontal, 34)
                 }
                 if showVolume { volumeBadge(width: s * 0.3, font: max(10, s * 0.04)) }
@@ -371,7 +373,7 @@ struct MiniPlayerView: View {
                     .frame(width: play * 1.15)
             }
             Button { player.next() } label: { Image(systemName: "forward.fill") }
-                .disabled(player.upcoming.isEmpty)
+                .disabled(!player.hasNext)
         }
         .buttonStyle(.plain)
         .disabled(player.current == nil)
@@ -386,7 +388,7 @@ struct MiniPlayerView: View {
         }
         .font(.system(size: font))
         .padding(.horizontal, 10).padding(.vertical, 5)
-        .background(.black.opacity(0.55), in: Capsule())
+        .glass(Capsule())
         .transition(.opacity)
     }
 }

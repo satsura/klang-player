@@ -201,6 +201,13 @@ final class Emby {
 
     private let trackFields = "MediaSources"
 
+    /// Emby's Instant Mix: tracks similar to an item (by genre).
+    func instantMix(_ id: String, limit: Int = 30) async throws -> [Track] {
+        let uid = try await userId()
+        let r: ItemsResponse<Track> = try await get("/Items/\(id)/InstantMix", ["UserId": uid, "Limit": "\(limit)", "Fields": trackFields])
+        return r.Items
+    }
+
     func track(id: String) async throws -> Track? {
         let uid = try await userId()
         let r: ItemsResponse<Track> = try await get("/Users/\(uid)/Items", ["Ids": id, "Fields": trackFields])
@@ -317,6 +324,26 @@ final class Emby {
             "Recursive": "true", "IncludeItemTypes": "Playlist", "SortBy": "SortName", "Fields": "ChildCount",
         ])
         return r.Items
+    }
+
+    /// Creates a playlist with these tracks; returns its id.
+    func createPlaylist(_ name: String, ids: [String]) async throws -> String {
+        let uid = try await userId()
+        var r = URLRequest(url: url("/Playlists", ["Name": name, "Ids": ids.joined(separator: ","), "UserId": uid, "MediaType": "Audio"]))
+        r.httpMethod = "POST"
+        let (data, resp) = try await URLSession.shared.data(for: r)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else { throw PlayerError.http(code) }
+        return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["Id"] as? String ?? ""
+    }
+
+    func addToPlaylist(_ id: String, ids: [String]) async throws {
+        let uid = try await userId()
+        var r = URLRequest(url: url("/Playlists/\(id)/Items", ["Ids": ids.joined(separator: ","), "UserId": uid]))
+        r.httpMethod = "POST"
+        let (_, resp) = try await URLSession.shared.data(for: r)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else { throw PlayerError.http(code) }
     }
 
     func playlistTracks(_ id: String) async throws -> [Track] {

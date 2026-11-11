@@ -71,6 +71,12 @@ enum Config {
         }
     }
 
+    /// Level loudness of tracks converted for the speaker (EBU R128).
+    static var normalizeLoudness: Bool {
+        get { d.object(forKey: "normalizeLoudness") as? Bool ?? true }
+        set { d.set(newValue, forKey: "normalizeLoudness") }
+    }
+
     static var isConfigured: Bool { !embyURL.isEmpty && !apiKey.isEmpty && !speakerIP.isEmpty }
 
     /// Cache limit for converted tracks.

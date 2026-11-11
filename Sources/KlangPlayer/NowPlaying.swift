@@ -88,7 +88,7 @@ struct NowPlayingView: View {
                             .symbolRenderingMode(.hierarchical)
                     }
                     Button { player.next() } label: { Image(systemName: "forward.fill").font(.system(size: 15)) }
-                        .disabled(player.upcoming.isEmpty)
+                        .disabled(!player.hasNext)
                 }
                 .buttonStyle(.borderless)
                 .disabled(player.current == nil)
@@ -150,22 +150,45 @@ struct NowPlayingView: View {
 struct QueueView: View {
     @ObservedObject var player = Player.shared
     let close: () -> Void
+    var showsBack = true
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Button(action: close) {
-                    Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 12) {
+                if showsBack {
+                    Button(action: close) {
+                        Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold))
+                    }
+                    .accessibilityLabel(Text("Back"))
                 }
-                .buttonStyle(.borderless)
                 Text("Queue").font(.system(size: 12, weight: .semibold))
                 Spacer()
-                if !player.upcoming.isEmpty {
-                    Button("Clear") { player.clearUpcoming() }
-                        .buttonStyle(.borderless)
-                        .font(.system(size: 11))
+                Button { player.shuffleUpcoming() } label: { Image(systemName: "shuffle") }
+                    .help("Shuffle what's next")
+                    .disabled(player.upcoming.count < 2)
+                Button { player.cycleRepeat() } label: {
+                    Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
+                        .foregroundStyle(player.repeatMode == .off ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
                 }
+                .help(player.repeatMode == .off ? LocalizedStringKey("Repeat: off") : player.repeatMode == .all ? LocalizedStringKey("Repeat: queue") : LocalizedStringKey("Repeat: track"))
+                Button { player.setAutoplay(!player.autoplay) } label: {
+                    Image(systemName: "infinity")
+                        .foregroundStyle(player.autoplay ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+                }
+                .help(player.autoplay ? LocalizedStringKey("When the queue ends: similar music (on)") : LocalizedStringKey("When the queue ends: stop"))
+                Menu {
+                    Button("Save as Playlist…") { Task { await Library.shared.addToPlaylist(nil, tracks: player.queue) } }
+                        .disabled(player.queue.isEmpty)
+                    AddToPlaylistMenu { player.queue }
+                    Divider()
+                    Button("Clear What's Next") { player.clearUpcoming() }.disabled(player.upcoming.isEmpty)
+                    Button("Clear Queue") { player.clearAll() }.disabled(player.queue.isEmpty)
+                } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
             }
+            .buttonStyle(.borderless)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             Divider()
@@ -173,17 +196,20 @@ struct QueueView: View {
                 EmptyState(icon: "list.bullet", text: String(localized: "Queue is empty"))
             } else {
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(Array(player.queue.enumerated()), id: \.offset) { i, t in
-                                TrackRow(track: t, showArtist: true, showCover: true,
-                                         onRemove: i == player.index ? nil : { player.remove(at: i) }) { player.jump(to: i) }
-                                    .opacity(i < player.index ? 0.45 : 1)
-                                    .id(i)
-                            }
+                    // List: drag tracks to reorder.
+                    List {
+                        ForEach(Array(player.queue.enumerated()), id: \.offset) { i, t in
+                            TrackRow(track: t, showArtist: true, showCover: true,
+                                     onRemove: i == player.index ? nil : { player.remove(at: i) }) { player.jump(to: i) }
+                                .opacity(i < player.index ? 0.45 : 1)
+                                .listRowInsets(EdgeInsets())
+                                .listRowSeparator(.hidden)
+                                .id(i)
                         }
-                        .padding(.vertical, 6)
+                        .onMove { player.move(from: $0, to: $1) }
                     }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
                     .onAppear { proxy.scrollTo(max(0, player.index), anchor: .top) }
                 }
             }

@@ -152,7 +152,7 @@ final class Integrations {
             "state": state,
             "position": player.position,
             "duration": player.duration,
-            "hasNext": !player.upcoming.isEmpty,
+            "hasNext": player.hasNext,
             "favorite": Library.shared.currentIsFavorite,
             "volume": Int(player.volume),
             "maxVolume": Int(player.maxVolume),

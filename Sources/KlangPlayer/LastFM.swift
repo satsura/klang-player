@@ -184,16 +184,86 @@ final class LastFM {
         return n
     }
 
-    private var topCache: [String: Set<String>] = [:]
+    private var similarCache: [String: [(name: String, match: Double)]] = [:]
+
+    /// Similar artists on Last.fm, most similar first.
+    func similarArtists(_ artist: String, limit: Int = 30) async -> [String] {
+        await similarArtistsScored(artist, limit: limit).map(\.name)
+    }
+
+    /// Similar artists with Last.fm's similarity (0…1).
+    func similarArtistsScored(_ artist: String, limit: Int = 30) async -> [(name: String, match: Double)] {
+        let key = artist.lowercased()
+        if let c = similarCache[key] { return c }
+        guard Self.hasKey,
+              let r = try? await call("artist.getSimilar", ["artist": artist, "autocorrect": "1", "limit": "\(limit)"]),
+              let list = (r["similarartists"] as? [String: Any])?["artist"] as? [[String: Any]] else { return [] }
+        let out = list.compactMap { a -> (String, Double)? in
+            guard let n = a["name"] as? String else { return nil }
+            return (n, Double(a["match"] as? String ?? "") ?? 0)
+        }
+        similarCache[key] = out
+        return out
+    }
+
+    /// The artist's top tags (lowercased), most used first.
+    func artistTags(_ artist: String) async -> [String] {
+        guard Self.hasKey,
+              let r = try? await call("artist.getTopTags", ["artist": artist, "autocorrect": "1"]),
+              let list = (r["toptags"] as? [String: Any])?["tag"] as? [[String: Any]] else { return [] }
+        return list.prefix(12).compactMap { ($0["name"] as? String)?.lowercased() }
+    }
+
+    // MARK: The user's listening (needs the connected account)
+
+    struct Top: Identifiable, Hashable {
+        let name: String
+        let artist: String
+        let plays: Int
+        let image: URL?
+        var id: String { artist + "|" + name }
+    }
+
+    /// period: 7day, 1month, 3month, 6month, 12month, overall. kind: artists, albums, tracks.
+    func userTop(_ kind: String, period: String, limit: Int = 10) async -> [Top] {
+        guard Self.hasKey, !Self.userName.isEmpty,
+              let r = try? await call("user.getTop" + kind.prefix(1).uppercased() + kind.dropFirst(),
+                                     ["user": Self.userName, "period": period, "limit": "\(limit)"]) else { return [] }
+        let root = r["top" + kind] as? [String: Any]
+        let list = root?[String(kind.dropLast())] as? [[String: Any]] ?? []
+        return list.compactMap { o in
+            guard let name = o["name"] as? String else { return nil }
+            let artist = (o["artist"] as? [String: Any])?["name"] as? String ?? (kind == "artists" ? name : "")
+            let image = (o["image"] as? [[String: Any]])?.last.flatMap { $0["#text"] as? String }.flatMap { $0.isEmpty ? nil : URL(string: $0) }
+            return Top(name: name, artist: artist, plays: Int(o["playcount"] as? String ?? "") ?? 0, image: image)
+        }
+    }
+
+    /// Number of scrobbles since a date, and in total.
+    func scrobbles(since: Date?) async -> Int? {
+        guard Self.hasKey, !Self.userName.isEmpty else { return nil }
+        var p = ["user": Self.userName, "limit": "1"]
+        if let since { p["from"] = "\(Int(since.timeIntervalSince1970))" }
+        guard let r = try? await call("user.getRecentTracks", p),
+              let attr = (r["recenttracks"] as? [String: Any])?["@attr"] as? [String: Any] else { return nil }
+        return Int(attr["total"] as? String ?? "")
+    }
+
+    private var topCache: [String: [String]] = [:]
 
     /// The artist's most played tracks on Last.fm, as normalized names.
     func topTracks(_ artist: String) async -> Set<String> {
+        Set(await topTrackNames(artist).prefix(10))
+    }
+
+    /// The same, in Last.fm's order (most played first), up to 30.
+    func topTrackNames(_ artist: String) async -> [String] {
         let key = artist.lowercased()
         if let c = topCache[key] { return c }
         guard Self.hasKey,
-              let r = try? await call("artist.getTopTracks", ["artist": artist, "autocorrect": "1", "limit": "10"]),
+              let r = try? await call("artist.getTopTracks", ["artist": artist, "autocorrect": "1", "limit": "30"]),
               let list = (r["toptracks"] as? [String: Any])?["track"] as? [[String: Any]] else { return [] }
-        let names = Set(list.compactMap { $0["name"] as? String }.map(Self.normalize))
+        let names = list.compactMap { $0["name"] as? String }.map(Self.normalize)
         topCache[key] = names
         return names
     }

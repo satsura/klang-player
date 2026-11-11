@@ -283,3 +283,64 @@ final class AdoptTests: XCTestCase {
         XCTAssertNil(Player.trackId(in: "http://radio.example/stream.mp3"))
     }
 }
+
+import AVFoundation
+
+final class LoudnessTests: XCTestCase {
+    /// 1 kHz sine, 10 s, 48 kHz; amplitude per channel.
+    private func sine(_ amps: [Float]) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("klang-sine-\(UUID().uuidString).wav")
+        let fmt = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: AVAudioChannelCount(amps.count))!
+        let file = try AVAudioFile(forWriting: url, settings: fmt.settings)
+        let n = 48_000 * 10
+        let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(n))!
+        buf.frameLength = AVAudioFrameCount(n)
+        for c in amps.indices {
+            for i in 0..<n { buf.floatChannelData![c][i] = amps[c] * sin(2 * .pi * 1000 * Float(i) / 48_000) }
+        }
+        try file.write(from: buf)
+        return url
+    }
+
+    func testReferenceSines() throws {
+        let both = try sine([0.1, 0.1])
+        defer { try? FileManager.default.removeItem(at: both) }
+        XCTAssertEqual(try Loudness.measure(both).lufs, -20, accuracy: 0.2)
+
+        let left = try sine([0.1, 0])
+        defer { try? FileManager.default.removeItem(at: left) }
+        XCTAssertEqual(try Loudness.measure(left).lufs, -23, accuracy: 0.2)
+    }
+
+    func testGainReachesTargetWithoutClipping() throws {
+        let quiet = try sine([0.05, 0.05])          // ≈ −26 LUFS, peak −26 dBFS
+        let out = quiet.deletingLastPathComponent().appendingPathComponent("klang-leveled-\(UUID().uuidString).wav")
+        defer { try? FileManager.default.removeItem(at: quiet); try? FileManager.default.removeItem(at: out) }
+        let r = try Loudness.measure(quiet)
+        XCTAssertEqual(r.gainDB, Loudness.maxBoost, accuracy: 0.01, "capped boost")
+        try Loudness.apply(r.gainDB, from: quiet, to: out)
+        XCTAssertEqual(try Loudness.measure(out).lufs, r.lufs + r.gainDB, accuracy: 0.2)
+
+        let loud = try sine([0.9, 0.9])             // peak ≈ −0.9 dBFS: no boost allowed past −1 dBFS
+        defer { try? FileManager.default.removeItem(at: loud) }
+        XCTAssertLessThanOrEqual(try Loudness.measure(loud).gainDB, -0.08)
+    }
+}
+
+@MainActor
+final class SmartMixTests: XCTestCase {
+    func testParseMoodsDecadesLanguage() {
+        let q = SmartMix.parse("спокойное русское 90-х для работы")
+        XCTAssertTrue(q.tags.contains("chillout"))
+        XCTAssertEqual(q.russian, true)
+        XCTAssertEqual(q.years, 1990...1999)
+
+        XCTAssertEqual(SmartMix.parse("нулевые").years, 2000...2009)
+        XCTAssertEqual(SmartMix.parse("80s rock").years, 1980...1989)
+        XCTAssertTrue(SmartMix.parse("80s rock").tags.contains("rock"))
+        XCTAssertEqual(SmartMix.parse("1997").years, 1997...1997)
+        XCTAssertTrue(SmartMix.parse("любимое").favorites)
+        XCTAssertTrue(SmartMix.parse("давно не слушал").forgotten)
+        XCTAssertEqual(SmartMix.parse("shoegaze").tags, ["shoegaze"])
+    }
+}

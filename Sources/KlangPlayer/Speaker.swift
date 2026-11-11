@@ -206,4 +206,11 @@ final class Speaker {
     }
 
     func resetModeCache() { mpModeKey = nil }
+
+    /// Frontier: standby (off) or on. Other speakers have no standard power control over UPnP.
+    var canPower: Bool { profile?.kind == .frontier }
+    func setPower(_ on: Bool) async throws {
+        guard canPower else { return }
+        _ = try await fs("SET", "netRemote.sys.power", value: on ? "1" : "0")
+    }
 }

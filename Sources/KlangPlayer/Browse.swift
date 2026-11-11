@@ -1,31 +1,9 @@
 import SwiftUI
 
-enum Tab: String, CaseIterable, Identifiable {
-    case home, albums, artists, folders
-    var id: Self { self }
-    var title: LocalizedStringKey {
-        switch self {
-        case .home: "Home"
-        case .albums: "Albums"
-        case .artists: "Artists"
-        case .folders: "Folders"
-        }
-    }
-}
-
-enum Route: Hashable {
-    case album(Album)
-    case artist(Artist)
-    case folder(FolderEntry)
-    case playlist(FolderEntry)
-}
-
 struct ContentView: View {
     @ObservedObject var player = Player.shared
     @ObservedObject var lib = Library.shared
-    @State private var tab: Tab = .home
-    @State private var stacks: [Tab: [Route]] = [:]
-    @State private var query = ""
+    @StateObject private var nav = BrowserState()
     @State private var overlay: Overlay?
     @FocusState private var searchFocused: Bool
     @FocusState private var rootFocused: Bool
@@ -51,7 +29,7 @@ struct ContentView: View {
                         CoverPicker(album: album, artist: album.parts == nil ? album.artist : "") { _ in overlay = nil }
                     }
                 case nil:
-                    browser
+                    BrowserView(state: nav, searchFocused: $searchFocused)
                 }
             }
             .frame(maxHeight: .infinity)
@@ -73,80 +51,22 @@ struct ContentView: View {
         }
     }
 
-    private var browser: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Picker("", selection: $tab) {
-                    ForEach(Tab.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 262)
-                SearchField(text: $query, focused: $searchFocused)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .onChange(of: query) { lib.search(query) }
-
-            if !query.trimmingCharacters(in: .whitespaces).isEmpty {
-                SearchResultsView(query: query) { push($0) }
-            } else if let route = stacks[tab]?.last {
-                routeView(route)
-            } else {
-                switch tab {
-                case .home: HomeView { push($0) }
-                case .albums: AlbumsTab { push(.album($0)) }
-                case .artists: ArtistsList { push(.artist($0)) }
-                case .folders: FolderRoot { push(.folder($0)) }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func routeView(_ r: Route) -> some View {
-        switch r {
-        case .album(let a): AlbumView(album: a, back: pop)
-        case .artist(let a): ArtistView(artist: a, back: pop) { push(.album($0)) }
-        case .folder(let f): FolderView(folder: f, back: pop) { push(.folder($0)) }
-        case .playlist(let p): PlaylistView(playlist: p, back: pop)
-        }
-    }
-
-    private func push(_ r: Route) {
-        if !query.isEmpty {
-            // Opening something from search: show it in the matching tab.
-            switch r {
-            case .album: tab = .albums
-            case .artist: tab = .artists
-            case .folder: tab = .folders
-            case .playlist: tab = .home
-            }
-            query = ""
-        }
-        stacks[tab, default: []].append(r)
-    }
-
-    private func pop() { _ = stacks[tab]?.popLast() }
-
     private func seek(_ delta: Double) -> KeyPress.Result {
         guard player.current != nil else { return .ignored }
         player.seek(to: min(max(0, player.position + delta), max(0, player.duration - 1)))
         return .handled
     }
 
-    /// Esc: clear search → close queue/settings → go back.
+    /// Esc: close queue/settings → clear search → go back.
     private func back() -> KeyPress.Result {
-        if !query.isEmpty { query = ""; return .handled }
         if overlay != nil { overlay = nil; return .handled }
-        if !(stacks[tab]?.isEmpty ?? true) { pop(); return .handled }
-        return .ignored
+        return nav.back() ? .handled : .ignored
     }
 
     /// Invisible buttons that carry ⌘ shortcuts.
     private var hotkeys: some View {
         Group {
-            Button("") { overlay = nil; searchFocused = true }.keyboardShortcut("f", modifiers: .command)
+            Button("") { overlay = nil; nav.searching = true; searchFocused = true }.keyboardShortcut("f", modifiers: .command)
             Button("") { player.setVolume(player.volume + 1) }.keyboardShortcut(.upArrow, modifiers: .command)
             Button("") { player.setVolume(player.volume - 1) }.keyboardShortcut(.downArrow, modifiers: .command)
             Button("") { _ = back() }.keyboardShortcut("[", modifiers: .command)
@@ -173,6 +93,9 @@ struct ContentView: View {
                 speakerMenu
             }
             Spacer()
+            Button { StatusBar.shared.openWindow() } label: { Image(systemName: "macwindow") }
+                .buttonStyle(.borderless)
+                .help("Open in Window")
             Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }
                 .buttonStyle(.borderless)
                 .help("Quit")
@@ -193,6 +116,9 @@ struct ContentView: View {
                 }
             }
             if !Config.knownSpeakers.isEmpty { Divider() }
+            if Speaker.shared.canPower {
+                Button("Turn Off Speaker") { player.turnOffSpeaker() }
+            }
             Button("Find Speakers…") {
                 overlay = .settings
                 Task { await Player.relocateSpeaker() }
@@ -350,6 +276,7 @@ struct AlbumTile: View {
             Button("Shuffle") { Task { if let t = try? await lib.tracks(for: album) { player.play(t.shuffled()) } } }
             Button("Play Next") { Task { if let t = try? await lib.tracks(for: album) { player.playNext(t) } } }
             Button("Add to Queue") { Task { if let t = try? await lib.tracks(for: album) { player.enqueue(t) } } }
+            AddToPlaylistMenu { (try? await lib.tracks(for: album)) ?? [] }
             if album.parts == nil {
                 Divider()
                 let fav = lib.isFavorite(album.Id, server: album.UserData?.IsFavorite ?? false)
@@ -561,27 +488,64 @@ struct ArtistView: View {
     @ObservedObject var lib = Library.shared
     let artist: Artist
     let back: () -> Void
-    let open: (Album) -> Void
+    let open: (Route) -> Void
+    @State private var popular: [Track] = []
+    @State private var similar: [(name: String, local: Artist?)] = []
+    private let columns = [GridItem(.adaptive(minimum: 108, maximum: 130), spacing: 12, alignment: .top)]
 
     var body: some View {
         VStack(spacing: 0) {
             NavHeader(title: artist.name, back: back)
-            HStack(spacing: 6) {
-                Button { Task { player.play(await allTracks()) } } label: {
-                    Label("Play All", systemImage: "play.fill").font(.system(size: 11, weight: .semibold))
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Button { Task { player.play(await allTracks()) } } label: {
+                            Label("Play All", systemImage: "play.fill").font(.system(size: 11, weight: .semibold))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button { Task { player.play(await allTracks().shuffled()) } } label: {
+                            Label("Shuffle", systemImage: "shuffle").font(.system(size: 11))
+                        }
+                        .buttonStyle(.bordered)
+                        Spacer()
+                    }
+                    .controlSize(.small)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 6)
+                    AboutSection(subject: .artist(artist.name))
+                    if !popular.isEmpty {
+                        SectionTitle("Popular")
+                        ForEach(Array(popular.prefix(5).enumerated()), id: \.element.id) { i, t in
+                            TrackRow(track: t, showArtist: false, showCover: true) { player.play(popular, at: i) }
+                        }
+                    }
+                    SectionTitle("Albums")
+                    LazyVGrid(columns: columns, spacing: 14) {
+                        ForEach(artist.albums) { a in AlbumTile(album: a) { open(.album(a)) } }
+                    }
+                    .padding(.horizontal, 12)
+                    if !similar.isEmpty {
+                        SectionTitle("Similar Artists")
+                        FlowChips(items: similar.map(\.name), marked: Set(similar.filter { $0.local != nil }.map(\.name))) { name in
+                            if let a = similar.first(where: { $0.name == name })?.local { open(.artist(a)) } else { open(.newArtist(name)) }
+                        }
+                        .padding(.horizontal, 14)
+                        Text("Highlighted: in your library").font(.system(size: 9.5)).foregroundStyle(.tertiary).padding(.horizontal, 14).padding(.top, 4)
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                Button { Task { player.play(await allTracks().shuffled()) } } label: {
-                    Label("Shuffle", systemImage: "shuffle").font(.system(size: 11))
-                }
-                .buttonStyle(.bordered)
-                Spacer()
+                .padding(.bottom, 12)
             }
-            .controlSize(.small)
-            .padding(.horizontal, 14)
-            .padding(.bottom, 6)
-            AboutSection(subject: .artist(artist.name))
-            AlbumsGrid(albums: artist.albums, open: open)
+        }
+        .task(id: artist.name) {
+            let names = await LastFM.shared.topTrackNames(artist.name)
+            if !names.isEmpty {
+                let all = await allTracks()
+                var seen = Set<String>()
+                popular = names.compactMap { n in all.first { LastFM.normalize($0.Name) == n } }.filter { seen.insert($0.Id).inserted }
+            }
+            let byKey = Dictionary(lib.artists.map { (Library.artistKey($0.name), $0) }, uniquingKeysWith: { a, _ in a })
+            let list = await LastFM.shared.similarArtists(artist.name, limit: 20).map { ($0, byKey[Library.artistKey($0)]) }
+            similar = list.filter { $0.1 != nil } + list.filter { $0.1 == nil }
         }
     }
 
@@ -589,6 +553,53 @@ struct ArtistView: View {
         var out: [Track] = []
         for a in artist.albums { out += (try? await lib.tracks(for: a)) ?? [] }
         return out
+    }
+}
+
+/// Wrapping row of tappable name chips; `marked` ones are highlighted.
+struct FlowChips: View {
+    let items: [String]
+    let marked: Set<String>
+    let tap: (String) -> Void
+
+    var body: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(items, id: \.self) { name in
+                Button { tap(name) } label: {
+                    Text(verbatim: name).font(.system(size: 11))
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .foregroundStyle(marked.contains(name) ? Color.accentColor : .primary)
+                        .background(Capsule().fill(marked.contains(name) ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.07)))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+/// Lays children out left to right, wrapping to new lines.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(proposal.width ?? 300, subviews).size
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (i, p) in arrange(bounds.width, subviews).points.enumerated() {
+            subviews[i].place(at: CGPoint(x: bounds.minX + p.x, y: bounds.minY + p.y), proposal: .unspecified)
+        }
+    }
+    private func arrange(_ width: CGFloat, _ subviews: Subviews) -> (size: CGSize, points: [CGPoint]) {
+        var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0, maxX: CGFloat = 0
+        var pts: [CGPoint] = []
+        for s in subviews {
+            let sz = s.sizeThatFits(.unspecified)
+            if x > 0, x + sz.width > width { x = 0; y += line + spacing; line = 0 }
+            pts.append(CGPoint(x: x, y: y))
+            x += sz.width + spacing
+            line = max(line, sz.height)
+            maxX = max(maxX, x)
+        }
+        return (CGSize(width: maxX, height: y + line), pts)
     }
 }
 
@@ -733,6 +744,7 @@ struct FolderRow: View {
             Button("Add to Queue") {
                 Task { if let t = try? await Emby.shared.allTracks(under: folder.Id) { player.enqueue(t) } }
             }
+            AddToPlaylistMenu { (try? await Emby.shared.allTracks(under: folder.Id)) ?? [] }
         }
     }
 
@@ -785,65 +797,6 @@ struct SearchResultsView: View {
 
 // MARK: Home
 
-struct HomeView: View {
-    @ObservedObject var player = Player.shared
-    @ObservedObject var lib = Library.shared
-    let open: (Route) -> Void
-
-    private var empty: Bool {
-        lib.playlists.isEmpty && lib.recentAlbums.isEmpty && lib.recentTracks.isEmpty && lib.favoriteTracks.isEmpty
-    }
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                if !lib.recentTracks.isEmpty {
-                    SectionTitle("Recently Played")
-                    trackList(lib.recentTracks)
-                }
-                if !lib.playlists.isEmpty {
-                    SectionTitle("Playlists")
-                    shelf { ForEach(lib.playlists) { p in PlaylistTile(playlist: p) { open(.playlist(p)) } } }
-                }
-                if !lib.recentAlbums.isEmpty {
-                    SectionTitle("Recently Added")
-                    shelf { ForEach(lib.recentAlbums) { a in AlbumTile(album: a) { open(.album(a)) } } }
-                }
-                if !lib.topTracks.isEmpty {
-                    SectionTitle("Most Played")
-                    trackList(lib.topTracks)
-                }
-                if !lib.favoriteAlbums.isEmpty || !lib.favoriteTracks.isEmpty {
-                    SectionTitle("Favorites")
-                    if !lib.favoriteAlbums.isEmpty {
-                        shelf { ForEach(lib.favoriteAlbums) { a in AlbumTile(album: a) { open(.album(a)) } } }
-                    }
-                    trackList(lib.favoriteTracks, limit: 50)
-                }
-                if empty && !lib.loading {
-                    EmptyState(icon: "house", text: String(localized: "Nothing here yet"))
-                }
-            }
-            .padding(.bottom, 10)
-        }
-        .task { await lib.loadHome() }
-    }
-
-    private func shelf<C: View>(@ViewBuilder _ content: () -> C) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(alignment: .top, spacing: 12) { content() }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 4)
-        }
-    }
-
-    @ViewBuilder
-    private func trackList(_ tracks: [Track], limit: Int = 5) -> some View {
-        ForEach(Array(tracks.prefix(limit).enumerated()), id: \.element.id) { i, t in
-            TrackRow(track: t, showArtist: true, showCover: true) { player.play(tracks, at: i) }
-        }
-    }
-}
 
 struct PlaylistTile: View {
     let playlist: FolderEntry

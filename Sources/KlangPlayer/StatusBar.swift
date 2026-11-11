@@ -95,7 +95,7 @@ final class StatusBar: NSObject, NSPopoverDelegate {
             img?.isTemplate = true
             if b.image?.name() != symbol { b.image = img; b.image?.setName(symbol) }
             b.toolTip = label
-            b.appearsDisabled = kind == .next && p.upcoming.isEmpty
+            b.appearsDisabled = kind == .next && !p.hasNext
             b.alphaValue = kind == .toggle ? 1 : 0.85
         }
     }
@@ -112,6 +112,12 @@ final class StatusBar: NSObject, NSPopoverDelegate {
     }
 
     func showPopover() { if !popover.isShown { togglePopover() } }
+
+    /// Closes the popover and opens the large window.
+    func openWindow() {
+        if popover.isShown { popover.performClose(nil) }
+        LibraryWindow.shared.show()
+    }
 
     @objc private func titleClicked(_ sender: NSStatusBarButton) {
         let e = NSApp.currentEvent
@@ -135,6 +141,7 @@ final class StatusBar: NSObject, NSPopoverDelegate {
     private func showMenu(_ button: NSStatusBarButton) {
         let menu = NSMenu()
         menu.addItem(MenuAction(title: String(localized: "Open Klang Player")) { [weak self] in self?.showPopover() })
+        menu.addItem(MenuAction(title: String(localized: "Open in Window")) { [weak self] in self?.openWindow() })
         menu.addItem(MenuAction(title: MiniPlayer.shared.isVisible ? String(localized: "Close Card") : String(localized: "Show card")) {
             MiniPlayer.shared.toggle()
         })
@@ -145,6 +152,9 @@ final class StatusBar: NSObject, NSPopoverDelegate {
             }
             fav.image = NSImage(systemSymbolName: on ? "heart.fill" : "heart", accessibilityDescription: nil)
             menu.addItem(fav)
+        }
+        if Speaker.shared.canPower {
+            menu.addItem(MenuAction(title: String(localized: "Turn Off Speaker")) { Player.shared.turnOffSpeaker() })
         }
         menu.addItem(.separator())
         menu.addItem(MenuAction(title: String(localized: "Quit")) { NSApp.terminate(nil) })

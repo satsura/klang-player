@@ -1,4 +1,6 @@
+import NaturalLanguage
 import SwiftUI
+import Translation
 
 /// Song lyrics from LRCLIB (lrclib.net): free, no key, often with timings for each line.
 struct Lyrics: Equatable {
@@ -111,10 +113,37 @@ struct LyricsView: View {
     let close: () -> Void
     @State private var lyrics: Lyrics?
     @State private var loading = false
+    @AppStorage("lyricsTranslate") private var translate = false
+    /// Line text → translation.
+    @State private var translated: [String: String] = [:]
+
+    /// Language of the lyrics, if it differs from the app's (then translation is offered).
+    private var foreignLanguage: String? {
+        guard let l = lyrics else { return nil }
+        let text = l.isSynced ? l.lines.map(\.text).joined(separator: "\n") : (l.plain ?? "")
+        let r = NLLanguageRecognizer()
+        r.processString(text)
+        guard let lang = r.dominantLanguage?.rawValue, lang != Self.appLanguage, lang != "und" else { return nil }
+        return lang
+    }
+    static var appLanguage: String { Bundle.main.preferredLocalizations.first == "ru" ? "ru" : "en" }
+
+    private var lineTexts: [String] {
+        guard let l = lyrics else { return [] }
+        let all = l.isSynced ? l.lines.map(\.text) : (l.plain ?? "").components(separatedBy: .newlines)
+        return Array(Set(all.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            NavHeader(title: String(localized: "Lyrics"), back: close)
+            HStack {
+                NavHeader(title: String(localized: "Lyrics"), back: close)
+                if foreignLanguage != nil {
+                    Toggle(isOn: $translate) { Label("Translation", systemImage: "translate") }
+                        .toggleStyle(.button).controlSize(.small).padding(.trailing, 12)
+                        .help("Translate with macOS (on this Mac)")
+                }
+            }
             Group {
                 if loading {
                     ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -122,8 +151,18 @@ struct LyricsView: View {
                     synced(l)
                 } else if let text = lyrics?.plain {
                     ScrollView {
-                        Text(text).font(.system(size: 13)).lineSpacing(4).textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(text.components(separatedBy: .newlines).enumerated()), id: \.offset) { _, line in
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(verbatim: line.isEmpty ? " " : line).font(.system(size: 13))
+                                    if showTranslation, let tr = translated[line.trimmingCharacters(in: .whitespaces)] {
+                                        Text(verbatim: tr).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(16)
                     }
                 } else {
                     EmptyState(icon: "text.quote", text: String(localized: player.current == nil ? "Nothing playing" : "No lyrics found"))
@@ -132,13 +171,19 @@ struct LyricsView: View {
             .frame(maxHeight: .infinity)
             Text("Lyrics: lrclib.net").font(.system(size: 9)).foregroundStyle(.tertiary).padding(.bottom, 4)
         }
+        .modifier(TranslateLines(lines: showTranslation ? lineTexts : [], source: foreignLanguage, target: Self.appLanguage) {
+            translated = $0
+        })
         .task(id: player.current?.Id) {
             guard let t = player.current else { lyrics = nil; return }
             loading = true
+            translated = [:]
             lyrics = await LyricsStore.shared.lyrics(for: t)
             loading = false
         }
     }
+
+    private var showTranslation: Bool { translate && foreignLanguage != nil }
 
     private func synced(_ l: Lyrics) -> some View {
         let cur = l.current(at: clock.position)
@@ -146,13 +191,20 @@ struct LyricsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(l.lines) { line in
-                        Text(line.text.isEmpty ? "♪" : line.text)
-                            .font(.system(size: 15, weight: line.id == cur ? .bold : .semibold))
-                            .foregroundStyle(line.id == cur ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                            .onTapGesture { player.seek(to: line.time) }
-                            .id(line.id)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(line.text.isEmpty ? "♪" : line.text)
+                                .font(.system(size: 15, weight: line.id == cur ? .bold : .semibold))
+                                .foregroundStyle(line.id == cur ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                            if showTranslation, let tr = translated[line.text.trimmingCharacters(in: .whitespaces)] {
+                                Text(verbatim: tr)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(line.id == cur ? AnyShapeStyle(.secondary) : AnyShapeStyle(.quaternary))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .onTapGesture { player.seek(to: line.time) }
+                        .id(line.id)
                     }
                 }
                 .padding(.horizontal, 18)
@@ -163,6 +215,55 @@ struct LyricsView: View {
                 withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(cur, anchor: UnitPoint(x: 0, y: 0.35)) }
             }
             .onAppear { if let cur { proxy.scrollTo(cur, anchor: UnitPoint(x: 0, y: 0.35)) } }
+        }
+    }
+}
+
+/// Translates lines with Apple's on-device Translation (macOS 15+); macOS asks to download
+/// the language once. Does nothing on older systems.
+struct TranslateLines: ViewModifier {
+    let lines: [String]
+    let source: String?
+    let target: String
+    let done: ([String: String]) -> Void
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) {
+            content.modifier(Impl(lines: lines, source: source, target: target, done: done))
+        } else {
+            content
+        }
+    }
+
+    @available(macOS 15, *)
+    private struct Impl: ViewModifier {
+        let lines: [String]
+        let source: String?
+        let target: String
+        let done: ([String: String]) -> Void
+        @State private var config: TranslationSession.Configuration?
+
+        func body(content: Content) -> some View {
+            content
+                .translationTask(config) { session in
+                    let requests = lines.enumerated().map { TranslationSession.Request(sourceText: $1, clientIdentifier: "\($0)") }
+                    guard let responses = try? await session.translations(from: requests) else { return }
+                    var out: [String: String] = [:]
+                    for r in responses { out[r.sourceText] = r.targetText }
+                    await MainActor.run { done(out) }
+                }
+                .onChange(of: lines) { update() }
+                .onAppear { update() }
+        }
+
+        private func update() {
+            guard !lines.isEmpty, let source else { config = nil; return }
+            let lang = Locale.Language(identifier: source)
+            if config?.source?.languageCode != lang.languageCode {
+                config = .init(source: lang, target: Locale.Language(identifier: target))
+            } else {
+                config?.invalidate()
+            }
         }
     }
 }

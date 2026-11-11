@@ -68,7 +68,7 @@ final class FileServer {
         guard path.hasPrefix("/t/") else { return nil }
         let name = String(path.dropFirst(3))
         let parts = name.split(separator: ".")
-        guard parts.count == 2, !parts[0].isEmpty, parts[0].allSatisfy({ $0.isLetter || $0.isNumber }),
+        guard parts.count == 2, !parts[0].isEmpty, parts[0].allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" }),
               let mime = ["m4a": "audio/mp4", "mp3": "audio/mpeg"][String(parts[1])] else { return nil }
         let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("KlangPlayer", isDirectory: true)

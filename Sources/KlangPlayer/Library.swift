@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 struct Artist: Identifiable, Hashable {
@@ -74,7 +75,7 @@ final class Library: ObservableObject {
     func loadHome() async {
         async let pl = try? Emby.shared.playlists()
         async let ra = try? Emby.shared.recentlyAdded()
-        async let rt = try? Emby.shared.recentlyPlayed()
+        async let rt = try? Emby.shared.recentlyPlayed(limit: 150)
         async let tt = try? Emby.shared.mostPlayed()
         async let fa = try? Emby.shared.favoriteAlbums()
         async let ft = try? Emby.shared.favoriteTracks()
@@ -93,6 +94,41 @@ final class Library: ObservableObject {
         let on = !isFavorite(t.Id, server: t.isFavorite)
         toggleFavorite(t.Id, current: !on)
         LastFM.shared.love(t, on)
+    }
+
+    // MARK: Playlists
+
+    /// Adds tracks to a playlist, or to a new one (asks for its name) when `playlist` is nil.
+    func addToPlaylist(_ playlist: FolderEntry?, tracks: [Track]) async {
+        guard !tracks.isEmpty else { return }
+        do {
+            if let playlist {
+                try await Emby.shared.addToPlaylist(playlist.Id, ids: tracks.map(\.Id))
+                tracksCache["pl:" + playlist.Id] = nil
+            } else {
+                guard let name = Self.askName(String(localized: "New Playlist"), placeholder: tracks.first?.Album ?? "") else { return }
+                _ = try await Emby.shared.createPlaylist(name, ids: tracks.map(\.Id))
+            }
+            playlists = (try? await Emby.shared.playlists()) ?? playlists
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// A small macOS dialog with a text field.
+    static func askName(_ title: String, placeholder: String) -> String? {
+        let alert = NSAlert()
+        alert.messageText = title
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = placeholder
+        alert.accessoryView = field
+        alert.addButton(withTitle: String(localized: "Create"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        alert.window.initialFirstResponder = field
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        let name = field.stringValue.trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? nil : name
     }
 
     // MARK: Popularity (Last.fm)
@@ -140,6 +176,12 @@ final class Library: ObservableObject {
               let tracks = try? await tracks(for: a),
               let url = tracks.first(where: { $0.ImageTags?["Primary"] != nil })?.artURL(size: 260) else { return }
         trackCovers[a.Id] = url
+    }
+
+    /// Albums of the recently played tracks, most recent first.
+    var recentPlayedAlbums: [Album] {
+        var seen = Set<String>()
+        return recentTracks.compactMap { album(for: $0) }.filter { seen.insert($0.Id).inserted }.prefix(16).map { $0 }
     }
 
     /// The album (or merged compilation) a track belongs to.

@@ -31,23 +31,29 @@ no conversion, and the Mac isn't in the audio path.
 
 ## Features
 
-- Home: recently played, most played, favorites, playlists, recently added
-- Albums grid, artists, **folder browser** (play any folder recursively), search
-- Queue: play next, add to queue, remove, jump; restored after restart
-- Several speakers: switch from the main window, playback continues on the new one
+- **Recent**: continue where you left off, albums you played lately, new in the library, playlists
+- **Smart mixes** from a short description in English or Russian ("calm for work", "Russian 90s",
+  "forgotten favorites"): Last.fm artist tags, decades, language, listening history
+- **Discover**: new releases of your artists that you don't have yet, and artists similar to what you
+  listen to most (Last.fm history + Deezer), with 30-second previews and "open in Apple Music / YouTube Music"
+- **Statistics**: plays, approximate hours, top artists / albums / tracks for a month, a year or all time
+- Albums (sorted by name or Last.fm popularity), artists with their popular tracks and similar artists,
+  **folder browser** (play any folder recursively), search
+- Queue: drag to reorder, shuffle what's next, repeat (queue / track), save as playlist, clear;
+  **keeps playing similar music** when it ends; restored after restart
+- Playlists: create, add tracks, albums or folders
+- **Large window** with a sidebar, or the compact menu bar popover
+- **Loudness leveling** (EBU R128) for tracks converted for the speaker
+- **Lyrics** from [LRCLIB](https://lrclib.net), timed lines follow the song, on-device translation (macOS 15+)
+- **Last.fm** (your own free API key): scrobbling, ♥ as love, descriptions, popularity
+- **Covers**: fill missing album covers from track pictures or exact Deezer / iTunes matches; saved to Emby
+- Several speakers: switch from the main window, playback continues on the new one; turn the speaker off
 - Speaker discovery over SSDP; finds the speaker again by its UDN if its IP changes
-- Floating cover card above all windows (scroll over it to change the volume)
-- One menu bar item with the track and ⏮ ⏯ ⏭; macOS Now Playing and media keys
-- Desktop / Notification Center widget
-- Sleep timer (minutes or after the current track)
-- **Phone remote**: a web page on the home network, protected by a secret link (QR code)
-- Reports playback to Emby: history, play counts, "Now Playing" in the dashboard,
-  Last.fm scrobbling through Emby's Last.fm plugin
-- **Last.fm** (your own free API key): scrobbling, ♥ as love, album and artist descriptions
-- **Lyrics** from [LRCLIB](https://lrclib.net), timed lines follow the song
-- ♥ favorites everywhere: now playing, floating card, menu bar, phone remote
-- **Covers**: copy track pictures to albums without a cover, or pick one from Deezer / iTunes;
-  saved to Emby so every Emby app shows them. Marks on covers: Hi-Res, lyrics, favorite
+- Restarting the app doesn't stop the music: it picks up what the speaker is playing
+- Floating cover card above all windows in three styles and sizes (scroll over it to change the volume)
+- Menu bar: the track with ⏮ ⏯ ⏭; macOS Now Playing and media keys; desktop widget
+- Sleep timer; **phone remote** (a web page on the home network, protected by a secret link)
+- Liquid Glass on macOS 26+
 - Keyboard: Space play/pause, ←/→ seek, ⌘F search, ⌘↑/⌘↓ volume, Esc back
 
 ## Install
