@@ -119,6 +119,7 @@ struct BrowserView: View {
                 VStack(spacing: 0) { header; content }
             }
         }
+        .environment(\.wideBrowser, !compact)
         .onChange(of: state.query) { lib.search(state.query) }
     }
 

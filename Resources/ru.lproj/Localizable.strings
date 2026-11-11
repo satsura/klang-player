@@ -252,3 +252,5 @@
 "Play/Pause" = "Играть/пауза";
 "Volume Up" = "Громче";
 "Volume Down" = "Тише";
+"Show All: %lld" = "Показать все: %lld";
+"Show Less" = "Свернуть";

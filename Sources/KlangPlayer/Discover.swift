@@ -118,13 +118,11 @@ struct DiscoverView: View {
                 }
                 if !store.releases.isEmpty {
                     SectionTitle("New from Your Artists")
-                    Shelf {
-                        ForEach(store.releases) { r in
-                            DiscoverTile(image: r.cover, title: r.title, subtitle: "\(r.artist) · \(r.date.prefix(4))") {
-                                open(.newArtist(r.artist))
-                            }
-                            .contextMenu { links(artist: r.artist, album: r.title, deezer: r.link) }
+                    Shelf(store.releases) { r in
+                        DiscoverTile(image: r.cover, title: r.title, subtitle: "\(r.artist) · \(r.date.prefix(4))") {
+                            open(.newArtist(r.artist))
                         }
+                        .contextMenu { links(artist: r.artist, album: r.title, deezer: r.link) }
                     }
                 }
                 if !store.suggestions.isEmpty {
@@ -290,14 +288,12 @@ struct NewArtistView: View {
                     }
                     if !albums.isEmpty {
                         SectionTitle("Albums")
-                        Shelf {
-                            ForEach(albums) { a in
-                                DiscoverTile(image: a.cover_big ?? a.cover_medium, title: a.title,
-                                             subtitle: String((a.release_date ?? "").prefix(4))) {
-                                    if let l = a.link.flatMap(URL.init(string:)) { NSWorkspace.shared.open(l) }
-                                }
-                                .contextMenu { links(artist: name, album: a.title, deezer: a.link) }
+                        Shelf(albums) { a in
+                            DiscoverTile(image: a.cover_big ?? a.cover_medium, title: a.title,
+                                         subtitle: String((a.release_date ?? "").prefix(4))) {
+                                if let l = a.link.flatMap(URL.init(string:)) { NSWorkspace.shared.open(l) }
                             }
+                            .contextMenu { links(artist: name, album: a.title, deezer: a.link) }
                         }
                     }
                     if loading { ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(20) }

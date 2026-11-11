@@ -13,16 +13,16 @@ struct RecentView: View {
                 SmartMixBar()
                 if !lib.recentPlayedAlbums.isEmpty {
                     SectionTitle("Recently Played")
-                    Shelf { ForEach(lib.recentPlayedAlbums) { a in AlbumTile(album: a) { open(.album(a)) } } }
+                    Shelf(lib.recentPlayedAlbums) { a in AlbumTile(album: a) { open(.album(a)) } }
                 }
                 if !lib.recentAlbums.isEmpty {
                     SectionTitle("New in the Library")
-                    Shelf { ForEach(lib.recentAlbums) { a in AlbumTile(album: a) { open(.album(a)) } } }
+                    Shelf(lib.recentAlbums) { a in AlbumTile(album: a) { open(.album(a)) } }
                 }
                 let playlists = lib.playlists.filter { ($0.ChildCount ?? 1) > 0 }
                 if !playlists.isEmpty {
                     SectionTitle("Playlists")
-                    Shelf { ForEach(playlists) { p in PlaylistTile(playlist: p) { open(.playlist(p)) } } }
+                    Shelf(playlists) { p in PlaylistTile(playlist: p) { open(.playlist(p)) } }
                 }
                 HStack(spacing: 8) {
                     LinkButton(title: "Favorites", icon: "heart.fill", tint: .pink) { open(.favorites) }
@@ -70,15 +70,70 @@ struct ContinueCard: View {
     }
 }
 
-/// Horizontal row of tiles.
-struct Shelf<C: View>: View {
-    @ViewBuilder let content: C
+/// Tiles: a horizontal row in the popover; in the window, two rows of whole tiles with "Show All".
+struct Shelf<Item: Identifiable, Tile: View>: View {
+    let items: [Item]
+    @ViewBuilder let tile: (Item) -> Tile
+    @Environment(\.wideBrowser) private var wide
+    @State private var width: CGFloat = 0
+    @State private var expanded = false
+
+    init(_ items: [Item], @ViewBuilder tile: @escaping (Item) -> Tile) {
+        self.items = items
+        self.tile = tile
+    }
+
+    private static var tileWidth: CGFloat { 112 }
+    private static var spacing: CGFloat { 14 }
+
     var body: some View {
+        if wide { grid } else { row }
+    }
+
+    private var row: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(alignment: .top, spacing: 12) { content }
+            LazyHStack(alignment: .top, spacing: 12) { ForEach(items) { tile($0) } }
                 .padding(.horizontal, 14)
                 .padding(.bottom, 4)
         }
+    }
+
+    private var grid: some View {
+        let perRow = max(1, Int((width + Self.spacing) / (Self.tileWidth + Self.spacing)))
+        let limit = perRow * 2
+        let shown = expanded ? items : Array(items.prefix(limit))
+        return VStack(alignment: .leading, spacing: 8) {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(Self.tileWidth), spacing: Self.spacing, alignment: .top), count: perRow),
+                      alignment: .leading, spacing: 14) {
+                ForEach(shown) { tile($0) }
+            }
+            if items.count > limit {
+                Button {
+                    withAnimation(.snappy) { expanded.toggle() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(expanded ? LocalizedStringKey("Show Less") : LocalizedStringKey("Show All: \(items.count)"))
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .semibold))
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 4)
+    }
+}
+
+/// True in the large window: wider layouts (wrapping shelves).
+private struct WideBrowserKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var wideBrowser: Bool {
+        get { self[WideBrowserKey.self] }
+        set { self[WideBrowserKey.self] = newValue }
     }
 }
 
@@ -130,7 +185,7 @@ struct FavoritesView: View {
                     }
                     if !lib.favoriteAlbums.isEmpty {
                         SectionTitle("Albums")
-                        Shelf { ForEach(lib.favoriteAlbums) { a in AlbumTile(album: a) { open(.album(a)) } } }
+                        Shelf(lib.favoriteAlbums) { a in AlbumTile(album: a) { open(.album(a)) } }
                     }
                     if !lib.favoriteTracks.isEmpty {
                         SectionTitle("Tracks")

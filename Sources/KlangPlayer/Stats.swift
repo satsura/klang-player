@@ -59,13 +59,11 @@ struct StatsView: View {
                         }
                         if !albums.isEmpty {
                             SectionTitle("Top Albums")
-                            Shelf {
-                                ForEach(albums) { a in
-                                    let local = lib.albums.first { Covers.key($0.Name) == Covers.key(a.name) }
-                                    DiscoverTile(image: (local.flatMap { lib.coverURL($0, size: 260) } ?? a.image)?.absoluteString,
-                                                 title: a.name, subtitle: String(localized: "\(a.artist) · \(a.plays) plays")) {
-                                        if let local { open(.album(local)) } else { open(.newArtist(a.artist)) }
-                                    }
+                            Shelf(albums) { a in
+                                let local = lib.albums.first { Covers.key($0.Name) == Covers.key(a.name) }
+                                DiscoverTile(image: (local.flatMap { lib.coverURL($0, size: 260) } ?? a.image)?.absoluteString,
+                                             title: a.name, subtitle: String(localized: "\(a.artist) · \(a.plays) plays")) {
+                                    if let local { open(.album(local)) } else { open(.newArtist(a.artist)) }
                                 }
                             }
                         }
