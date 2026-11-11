@@ -237,3 +237,18 @@
 "Level loudness (EBU R128)" = "Выравнивать громкость (EBU R128)";
 "Brings tracks converted for the speaker to the same loudness, so albums and compilations don't jump in volume. Speakers that get original FLAC files play them as they are." = "Приводит треки, которые перекодируются для колонки, к одной громкости — альбомы и сборники не скачут по громкости. Колонки, получающие оригинальный FLAC, играют его как есть.";
 "When the queue ends, play similar music" = "Когда очередь кончится — играть похожее";
+
+/* App mode */
+"Window and menu bar" = "Окно и строка меню";
+"Window only" = "Только окно";
+"Menu bar only" = "Только строка меню";
+"A player window with a Dock icon, and the track with buttons in the menu bar. The window can be hidden to the menu bar." = "Окно плеера со значком в Dock, а в строке меню — трек и кнопки. Окно можно свернуть в строку меню.";
+"A regular app: the window and the Dock icon, nothing in the menu bar." = "Обычное приложение: окно и значок в Dock, в строке меню ничего.";
+"Only in the menu bar. The window opens on demand; the Dock icon shows while it's open." = "Только в строке меню. Окно открывается по запросу, значок в Dock виден, пока оно открыто.";
+"Show the player" = "Где показывать плеер";
+"Hide to Menu Bar" = "Свернуть в строку меню";
+"Player Window" = "Окно плеера";
+"Controls" = "Управление";
+"Play/Pause" = "Играть/пауза";
+"Volume Up" = "Громче";
+"Volume Down" = "Тише";

@@ -17,8 +17,16 @@ final class StatusBar: NSObject, NSPopoverDelegate {
     private var bag = Set<AnyCancellable>()
 
     private enum Control { case previous, toggle, next }
+    /// Off in the "window only" mode: the items stay created but hidden.
+    private var active = false
 
     func start() {
+        active = true
+        if let titleItem {
+            titleItem.isVisible = true
+            resize()
+            return
+        }
         // A newly created item appears left of the ones before it: ⏭ ⏯ ⏮ first, the title last.
         for kind in [Control.next, .toggle, .previous] {
             // Narrow items: the menu bar adds its own gap between items.
@@ -64,8 +72,17 @@ final class StatusBar: NSObject, NSPopoverDelegate {
         resize()
     }
 
+    /// Hides all menu bar items (they keep their places for the next start).
+    func stop() {
+        active = false
+        if popover.isShown { popover.performClose(nil) }
+        titleItem?.isVisible = false
+        for (it, _) in controls { it.isVisible = false }
+    }
+
     /// Fits the title item to its content and updates the control items.
     func resize() {
+        guard active else { return }
         guard let host else { return }
         host.invalidateIntrinsicContentSize()
         titleItem?.length = max(24, host.fittingSize.width)
@@ -116,7 +133,7 @@ final class StatusBar: NSObject, NSPopoverDelegate {
     /// Closes the popover and opens the large window.
     func openWindow() {
         if popover.isShown { popover.performClose(nil) }
-        LibraryWindow.shared.show()
+        Presence.showWindow()
     }
 
     @objc private func titleClicked(_ sender: NSStatusBarButton) {
@@ -168,7 +185,7 @@ final class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
 }
 
 /// Menu item that runs a closure.
-private final class MenuAction: NSMenuItem {
+final class MenuAction: NSMenuItem {
     private let run: () -> Void
     init(title: String, action: @escaping () -> Void) {
         run = action

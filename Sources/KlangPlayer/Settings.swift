@@ -19,6 +19,7 @@ struct SettingsView: View {
     @State private var loginItem = SMAppService.mainApp.status == .enabled
     @State private var loginItemError: String?
     @State private var menuBar = Integrations.showInMenuBar
+    @State private var appMode = AppMode.current
     @State private var remoteOn = Remote.enabled
     @State private var remoteURL = Remote.url
     @State private var language = Config.language
@@ -182,6 +183,14 @@ struct SettingsView: View {
                 }
 
                 group("Mac", icon: "laptopcomputer") {
+                    Picker("Show the player", selection: $appMode) {
+                        ForEach(AppMode.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .font(.system(size: 12))
+                    .onChange(of: appMode) { AppMode.current = appMode }
+                    Text(appMode.detail)
+                        .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                     Toggle("Launch at login", isOn: $loginItem)
                         .font(.system(size: 12))
                         .onChange(of: loginItem) {
@@ -193,9 +202,11 @@ struct SettingsView: View {
                             }
                         }
                     if let loginItemError { Text(loginItemError).font(.system(size: 10)).foregroundStyle(.red) }
-                    Toggle("Track and buttons in the menu bar", isOn: $menuBar)
-                        .font(.system(size: 12))
-                        .onChange(of: menuBar) { Integrations.showInMenuBar = menuBar }
+                    if appMode.usesMenuBar {
+                        Toggle("Track and buttons in the menu bar", isOn: $menuBar)
+                            .font(.system(size: 12))
+                            .onChange(of: menuBar) { Integrations.showInMenuBar = menuBar }
+                    }
                     HStack {
                         Text("Language").font(.system(size: 12))
                         Spacer()

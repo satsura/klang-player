@@ -13,6 +13,7 @@ struct KlangPlayerApp: App {
             }
             .frame(width: 420, height: 640)
         }
+        .commands { PlayerCommands() }
     }
 }
 
@@ -36,8 +37,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Click on the Dock icon with the window closed.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        MainActor.assumeIsolated { if !LibraryWindow.shared.isVisible { Presence.showWindow() } }
+        return true
+    }
+
+    @MainActor
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? { Presence.dockMenu() }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = CommandLine.arguments
+        // Started by "Launch at login"?
+        let launchEvent = NSAppleEventManager.shared().currentAppleEvent
+        let atLogin = launchEvent?.eventID == kAEOpenApplication
+            && launchEvent?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
         // Debug runs share the app's settings: keep them from saving over the user's queue.
         let debugFlags: Set = ["--selftest", "--fill-covers", "--discover", "--relocate", "--prepare", "--preview"]
         if args.contains(where: debugFlags.contains) {
@@ -66,7 +80,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Player.shared.restoreQueue()
                     Task { await Player.shared.adoptSpeaker() }
                 }
-                StatusBar.shared.start()
+                if args.contains("--selftest") || args.contains("--preview") {
+                    StatusBar.shared.start()     // debug copies: no window, no Dock icon
+                } else {
+                    Presence.launch(atLogin: atLogin)
+                }
                 NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
                     MainActor.assumeIsolated { Player.shared.saveQueue() }
                 }
@@ -76,7 +94,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 Integrations.shared.start()
                 MiniPlayer.shared.restore()
-                if !Config.isConfigured { StatusBar.shared.showPopover() }
             }
         }
         if args.contains("--selftest") {

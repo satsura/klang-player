@@ -2,7 +2,7 @@
 
 # Klang Player
 
-A macOS menu bar app that plays an [Emby](https://emby.media) music library on network
+A macOS music player (a window, the menu bar, or both) that plays an [Emby](https://emby.media) music library on network
 speakers: **Loewe klang** and other Frontier Silicon speakers, and standard UPnP/DLNA
 renderers such as Marantz/Denon (HEOS) receivers.
 
@@ -42,7 +42,7 @@ no conversion, and the Mac isn't in the audio path.
 - Queue: drag to reorder, shuffle what's next, repeat (queue / track), save as playlist, clear;
   **keeps playing similar music** when it ends; restored after restart
 - Playlists: create, add tracks, albums or folders
-- **Large window** with a sidebar, or the compact menu bar popover
+- **Player window** with a sidebar and a Dock icon, the compact menu bar popover, or both (Settings → Mac); the window can be hidden to the menu bar
 - **Loudness leveling** (EBU R128) for tracks converted for the speaker
 - **Lyrics** from [LRCLIB](https://lrclib.net), timed lines follow the song, on-device translation (macOS 15+)
 - **Last.fm** (your own free API key): scrobbling, ♥ as love, descriptions, popularity
@@ -51,7 +51,7 @@ no conversion, and the Mac isn't in the audio path.
 - Speaker discovery over SSDP; finds the speaker again by its UDN if its IP changes
 - Restarting the app doesn't stop the music: it picks up what the speaker is playing
 - Floating cover card above all windows in three styles and sizes (scroll over it to change the volume)
-- Menu bar: the track with ⏮ ⏯ ⏭; macOS Now Playing and media keys; desktop widget
+- Menu bar: the track with ⏮ ⏯ ⏭; Dock menu and a Controls menu; macOS Now Playing and media keys; desktop widget
 - Sleep timer; **phone remote** (a web page on the home network, protected by a secret link)
 - Liquid Glass on macOS 26+
 - Keyboard: Space play/pause, ←/→ seek, ⌘F search, ⌘↑/⌘↓ volume, Esc back

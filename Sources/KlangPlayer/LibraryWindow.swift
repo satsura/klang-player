@@ -7,6 +7,10 @@ final class LibraryWindow: NSObject, NSWindowDelegate {
     static let shared = LibraryWindow()
     private var window: NSWindow?
 
+    var isVisible: Bool { window?.isVisible ?? false }
+
+    func close() { window?.close() }
+
     func show(activate: Bool = true) {
         if window == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1160, height: 740),
@@ -24,18 +28,21 @@ final class LibraryWindow: NSObject, NSWindowDelegate {
         }
         guard activate else { window?.orderFrontRegardless(); return }   // debug screenshots
         // While the window is open the app shows in the Dock and ⌘Tab.
+        Presence.hiddenToMenuBar = false
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
 
     func windowWillClose(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        // The window still counts as visible here.
+        DispatchQueue.main.async { Presence.updateDock() }
     }
 }
 
 struct LibraryWindowView: View {
     @ObservedObject private var player = Player.shared
+    @AppStorage("appMode") private var mode = AppMode.both.rawValue
     @StateObject private var nav = BrowserState()
     @FocusState private var searchFocused: Bool
     @State private var pane: Pane = .queue
@@ -65,6 +72,10 @@ struct LibraryWindowView: View {
                     } label: { Image(systemName: "gearshape") }
                     .help("Settings")
                     Spacer()
+                    if AppMode(rawValue: mode)?.usesMenuBar ?? true {
+                        Button { Presence.hideToMenuBar() } label: { Image(systemName: "menubar.arrow.up.rectangle") }
+                            .help("Hide to Menu Bar")
+                    }
                 }
                 .buttonStyle(.borderless)
                 .padding(10)
@@ -93,6 +104,12 @@ struct LibraryWindowView: View {
         }
         .background {
             Button("") { searchFocused = true }.keyboardShortcut("f", modifiers: .command).opacity(0)
+        }
+        // Space plays / pauses unless a text field takes it.
+        .onKeyPress(.space) {
+            guard player.current != nil, !(NSApp.keyWindow?.firstResponder is NSText) else { return .ignored }
+            player.toggle()
+            return .handled
         }
     }
 }
