@@ -20,7 +20,7 @@ struct SettingsView: View {
 
     @State private var loginItem = SMAppService.mainApp.status == .enabled
     @State private var loginItemError: String?
-    @State private var menuBar = Integrations.showInMenuBar
+    @State private var menuBarStyle = MenuBarStyle.current
     @State private var appMode = AppMode.current
     @State private var remoteOn = Remote.enabled
     @State private var remoteURL = Remote.url
@@ -266,9 +266,16 @@ struct SettingsView: View {
                 }
             if let loginItemError { Text(loginItemError).font(.system(size: 10)).foregroundStyle(.red) }
             if appMode.usesMenuBar {
-                Toggle("Track and buttons in the menu bar", isOn: $menuBar)
-                    .font(.system(size: 12))
-                    .onChange(of: menuBar) { Integrations.showInMenuBar = menuBar }
+                HStack {
+                    Text("Menu bar").font(.system(size: 12))
+                    Spacer()
+                    Picker("", selection: $menuBarStyle) {
+                        ForEach(MenuBarStyle.allCases) { Text($0.title).tag($0) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .onChange(of: menuBarStyle) { MenuBarStyle.current = menuBarStyle }
+                }
             }
             HStack {
                 Text("Language").font(.system(size: 12))

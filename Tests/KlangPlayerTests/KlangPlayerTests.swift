@@ -344,3 +344,37 @@ final class SmartMixTests: XCTestCase {
         XCTAssertEqual(SmartMix.parse("shoegaze").tags, ["shoegaze"])
     }
 }
+
+@MainActor
+final class QueueUndoTests: XCTestCase {
+    private func tracks(_ n: Int) -> [Track] {
+        let json = "[" + (1...n).map { #"{"Id":"t\#($0)","Name":"Track \#($0)"}"# }.joined(separator: ",") + "]"
+        return try! JSONDecoder().decode([Track].self, from: Data(json.utf8))
+    }
+
+    func testUndoRedoQueueEdits() {
+        Player.persistQueue = false
+        let p = Player.shared
+        p.preview(tracks(5))          // dry run: never touches a speaker
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+
+        undo.beginUndoGrouping()
+        p.undoable("Clear What's Next", undo) { p.clearUpcoming() }
+        undo.endUndoGrouping()
+        XCTAssertEqual(p.queue.map(\.Id), ["t1"])
+        undo.undo()
+        XCTAssertEqual(p.queue.map(\.Id), ["t1", "t2", "t3", "t4", "t5"])
+        undo.redo()
+        XCTAssertEqual(p.queue.map(\.Id), ["t1"])
+        undo.undo()
+
+        undo.beginUndoGrouping()
+        p.undoable("Clear Queue", undo) { p.clearAll() }
+        undo.endUndoGrouping()
+        XCTAssertNil(p.current)
+        undo.undo()
+        XCTAssertEqual(p.queue.count, 5)
+        XCTAssertEqual(p.current?.Id, "t1")
+    }
+}

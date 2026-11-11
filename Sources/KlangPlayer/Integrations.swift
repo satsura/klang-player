@@ -19,11 +19,6 @@ final class Integrations {
     /// Elapsed time last given to Now Playing, and when; the system extrapolates from it.
     private var npElapsed: (position: Double, at: Date) = (0, .distantPast)
 
-    static var showInMenuBar: Bool {
-        get { UserDefaults.standard.object(forKey: "showInMenuBar") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "showInMenuBar"); StatusBar.shared.resize() }
-    }
-
     func start() {
         setupRemoteCommands()
         player.objectWillChange

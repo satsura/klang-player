@@ -196,18 +196,43 @@ final class MenuAction: NSMenuItem {
     @objc private func fire() { run() }
 }
 
-/// Title item content: speaker icon and the current track (scrolls when long).
-struct StatusBarView: View {
-    @ObservedObject var player = Player.shared
-    @AppStorage("showInMenuBar") private var showTrack = true
+/// What the menu bar shows while something is in the queue.
+enum MenuBarStyle: String, CaseIterable, Identifiable {
+    case full, controls, icon
+    var id: Self { self }
 
-    /// Whether the track and the ⏮ ⏯ ⏭ items are shown.
-    static var showsTrack: Bool {
-        (UserDefaults.standard.object(forKey: "showInMenuBar") as? Bool ?? true) && Player.shared.current != nil
+    var title: LocalizedStringKey {
+        switch self {
+        case .full: "Cover, track and buttons"
+        case .controls: "Cover and buttons"
+        case .icon: "Icon only"
+        }
     }
 
+    static var current: MenuBarStyle {
+        get {
+            if let raw = UserDefaults.standard.string(forKey: "menuBarStyle"), let s = MenuBarStyle(rawValue: raw) { return s }
+            // Older setting: a track-and-buttons on/off toggle.
+            return UserDefaults.standard.object(forKey: "showInMenuBar") as? Bool ?? true ? .full : .icon
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "menuBarStyle")
+            MainActor.assumeIsolated { StatusBar.shared.resize() }
+        }
+    }
+}
+
+/// Title item content: the cover (speaker icon) and the current track (scrolls when long).
+struct StatusBarView: View {
+    @ObservedObject var player = Player.shared
+    @AppStorage("menuBarStyle") private var styleRaw = ""
+    private var style: MenuBarStyle { MenuBarStyle(rawValue: styleRaw) ?? .current }
+
+    /// Whether the ⏮ ⏯ ⏭ items are shown.
+    static var showsTrack: Bool { MenuBarStyle.current != .icon && Player.shared.current != nil }
+
     private var title: String? {
-        guard showTrack, let t = player.current else { return nil }
+        guard style == .full, let t = player.current else { return nil }
         return [t.artist, t.Name].filter { !$0.isEmpty }.joined(separator: " — ")
     }
 
@@ -225,7 +250,7 @@ struct StatusBarView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            if title != nil, let art = player.current?.artURL(size: 64) {
+            if style != .icon, let art = player.current?.artURL(size: 64) {
                 // Small cover of the current album; the speaker icon until it loads.
                 AsyncImage(url: art) { phase in
                     if let img = phase.image {

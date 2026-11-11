@@ -146,6 +146,7 @@ struct NowPlayingView: View {
 
 struct QueueView: View {
     @ObservedObject var player = Player.shared
+    @Environment(\.undoManager) private var undo
     let close: () -> Void
     var showsBack = true
 
@@ -160,7 +161,7 @@ struct QueueView: View {
                 }
                 Text("Queue").font(.system(size: 12, weight: .semibold))
                 Spacer()
-                Button { player.shuffleUpcoming() } label: { Image(systemName: "shuffle").hitTarget() }
+                Button { player.undoable(String(localized: "Shuffle"), undo) { player.shuffleUpcoming() } } label: { Image(systemName: "shuffle").hitTarget() }
                     .tip("Shuffle what's next")
                     .disabled(player.upcoming.count < 2)
                 Button { player.cycleRepeat() } label: {
@@ -178,8 +179,8 @@ struct QueueView: View {
                         .disabled(player.queue.isEmpty)
                     AddToPlaylistMenu { player.queue }
                     Divider()
-                    Button("Clear What's Next") { player.clearUpcoming() }.disabled(player.upcoming.isEmpty)
-                    Button("Clear Queue") { player.clearAll() }.disabled(player.queue.isEmpty)
+                    Button("Clear What's Next") { player.undoable(String(localized: "Clear What's Next"), undo) { player.clearUpcoming() } }.disabled(player.upcoming.isEmpty)
+                    Button("Clear Queue") { player.undoable(String(localized: "Clear Queue"), undo) { player.clearAll() } }.disabled(player.queue.isEmpty)
                 } label: { Image(systemName: "ellipsis.circle").hitTarget() }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -197,13 +198,13 @@ struct QueueView: View {
                     List {
                         ForEach(Array(player.queue.enumerated()), id: \.offset) { i, t in
                             TrackRow(track: t, showArtist: true, showCover: true,
-                                     onRemove: i == player.index ? nil : { player.remove(at: i) }) { player.jump(to: i) }
+                                     onRemove: i == player.index ? nil : { player.undoable(String(localized: "Remove from Queue"), undo) { player.remove(at: i) } }) { player.jump(to: i) }
                                 .opacity(i < player.index ? 0.45 : 1)
                                 .listRowInsets(EdgeInsets())
                                 .listRowSeparator(.hidden)
                                 .id(i)
                         }
-                        .onMove { player.move(from: $0, to: $1) }
+                        .onMove { from, to in player.undoable(String(localized: "Move"), undo) { player.move(from: from, to: to) } }
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)

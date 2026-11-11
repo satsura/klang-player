@@ -210,6 +210,45 @@ final class Player: ObservableObject {
         Task { await run { try await Speaker.shared.setPower(false) } }
     }
 
+    // MARK: Undo for queue edits (⌘Z / ⇧⌘Z)
+
+    struct QueueSnapshot { let queue: [Track]; let index: Int }
+
+    /// Runs a queue edit and records how to take it back.
+    func undoable(_ name: String, _ undo: UndoManager?, _ edit: () -> Void) {
+        let before = QueueSnapshot(queue: queue, index: index)
+        edit()
+        registerUndo(before, name, undo)
+    }
+
+    private func registerUndo(_ snap: QueueSnapshot, _ name: String, _ undo: UndoManager?) {
+        guard let undo else { return }
+        undo.registerUndo(withTarget: self) { p in
+            MainActor.assumeIsolated {
+                let now = QueueSnapshot(queue: p.queue, index: p.index)
+                p.restore(snap)
+                p.registerUndo(now, name, undo)     // becomes Redo
+            }
+        }
+        undo.setActionName(name)
+    }
+
+    private func restore(_ s: QueueSnapshot) {
+        if current == nil {
+            // After "Clear Queue": bring it back stopped, at the same track.
+            queue = s.queue
+            index = s.index
+            position = 0
+            saveQueue()
+            return
+        }
+        // The current track keeps playing; only the list around it comes back.
+        guard let cur = current?.Id, let i = s.queue.firstIndex(where: { $0.Id == cur }) else { return }
+        queue = s.queue
+        index = i
+        requeueNext()
+    }
+
     /// Stops and empties the whole queue (also the saved one).
     func clearAll() {
         stop()
