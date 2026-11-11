@@ -228,3 +228,34 @@ final class LocalAPIAccessTests: XCTestCase {
     }
 }
 
+
+final class LastFMTests: XCTestCase {
+    func testSignatureSortsParamsAndSkipsFormat() {
+        let p = ["method": "track.love", "api_key": "k", "sk": "sess", "track": "Парашютист", "format": "json"]
+        XCTAssertEqual(LastFM.signature(p, secret: "s"), "55c19cd797f7074da35187467414627f")
+    }
+
+    func testEncodeEscapesCyrillic() {
+        XCTAssertEqual(LastFM.encode("Deadушки & Co"), "Dead%D1%83%D1%88%D0%BA%D0%B8%20%26%20Co")
+    }
+
+    func testSummaryToPlainText() {
+        let html = "Ashes &amp; dust. <b>Bold</b> <a href=\"https://www.last.fm/music/x\">Read more on Last.fm</a>"
+        XCTAssertEqual(LastFM.plainText(html), "Ashes & dust. Bold")
+    }
+}
+
+final class LyricsTests: XCTestCase {
+    func testParseLRC() {
+        let l = Lyrics.parseLRC("[ar: X]\n[00:12.50] First line\n[01:02.00][01:30.00] Chorus\n[00:20.00]\nnot a line")
+        XCTAssertEqual(l.map(\.time), [12.5, 20, 62, 90])
+        XCTAssertEqual(l.map(\.text), ["First line", "", "Chorus", "Chorus"])
+    }
+
+    func testCurrentLine() {
+        let lyrics = Lyrics(lines: Lyrics.parseLRC("[00:10.00]a\n[00:20.00]b"), plain: nil)
+        XCTAssertNil(lyrics.current(at: 5))
+        XCTAssertEqual(lyrics.current(at: 10), 0)
+        XCTAssertEqual(lyrics.current(at: 25), 1)
+    }
+}

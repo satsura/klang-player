@@ -150,6 +150,7 @@ private final class CardPanel: NSPanel {
 struct MiniPlayerView: View {
     @ObservedObject var player = Player.shared
     @ObservedObject var card = MiniPlayer.shared
+    @ObservedObject var lib = Library.shared
     let close: () -> Void
     @State private var hover = false
     @State private var dragging = false
@@ -179,6 +180,21 @@ struct MiniPlayerView: View {
                     .padding(card.style == .strip ? 4 : 8)
                 }
             }
+            .overlay(alignment: .topTrailing) {
+                // ♥ on hover (square styles; the strip has it in the context menu).
+                if hover, card.style != .strip, let t = player.current {
+                    let on = lib.isFavorite(t.Id, server: t.isFavorite)
+                    Button { lib.toggleFavorite(t) } label: {
+                        Image(systemName: on ? "heart.fill" : "heart")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(on ? Color.pink : .white)
+                            .shadow(color: .black.opacity(0.5), radius: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(9)
+                    .accessibilityLabel(on ? Text("Remove from Favorites") : Text("Add to Favorites"))
+                }
+            }
         }
         .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hover = h } }
         .onChange(of: player.volume) {
@@ -193,6 +209,11 @@ struct MiniPlayerView: View {
         .contextMenu {
             Button(player.state == .playing ? LocalizedStringKey("Pause") : LocalizedStringKey("Play")) { player.toggle() }
             Button("Next") { player.next() }
+            if let t = player.current {
+                Button(Library.shared.currentIsFavorite ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Add to Favorites")) {
+                    Library.shared.toggleFavorite(t)
+                }
+            }
             Divider()
             Picker("Card Style", selection: Binding(get: { card.style }, set: { card.setStyle($0) })) {
                 ForEach(CardStyle.allCases, id: \.self) { Text($0.title).tag($0) }

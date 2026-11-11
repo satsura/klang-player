@@ -1,7 +1,7 @@
 import Foundation
 
 /// Tells Emby what's playing (Sessions API): play history, play counts, "Now Playing" in the Emby
-/// dashboard and Last.fm scrobbling through Emby's Last.fm plugin.
+/// dashboard. Also passes start / end of each track to Last.fm when it's connected.
 @MainActor
 final class Reporter {
     static let shared = Reporter()
@@ -18,6 +18,7 @@ final class Reporter {
         let session = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         current = (t, session, method)
         lastProgress = Date()
+        LastFM.shared.started(t)
         send("/Sessions/Playing", body(t, session: session, method: method, position: 0, paused: false))
     }
 
@@ -34,6 +35,7 @@ final class Reporter {
     func stopped(at position: Double) {
         guard let c = current else { return }
         current = nil
+        LastFM.shared.finished(c.track, played: position)
         send("/Sessions/Playing/Stopped", body(c.track, session: c.session, method: c.method, position: position, paused: false))
         // Signed in with an API key (no user session): Emby ignores the session reports for user data,
         // so mark the track played directly — same rule as scrobbling: half the track or 4 minutes.

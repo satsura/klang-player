@@ -22,6 +22,14 @@ struct SettingsView: View {
     @State private var remoteOn = Remote.enabled
     @State private var remoteURL = Remote.url
     @State private var language = Config.language
+    @State private var lfmKey = LastFM.apiKey
+    @State private var lfmSecret = LastFM.secret
+    @State private var lfmUser = LastFM.userName
+    @State private var lfmScrobble = LastFM.scrobbling
+    @State private var lfmState: String?
+    @State private var lfmConnecting = false
+    @State private var coverState: String?
+    @State private var coverRunning = false
     private let startLanguage = Config.language
 
     var body: some View {
@@ -85,6 +93,50 @@ struct SettingsView: View {
                     Text("Speakers that accept FLAC get the original files. Others (Loewe klang and other Frontier Silicon speakers) get AAC 320.")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+
+                group("Last.fm", icon: "music.note.list") {
+                    if LastFM.isConnected, !lfmUser.isEmpty {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                            Text("Connected as \(lfmUser)").font(.system(size: 12))
+                            Spacer()
+                            Button("Disconnect") { LastFM.shared.disconnect(); lfmUser = "" }.controlSize(.small)
+                        }
+                        Toggle("Scrobble played tracks", isOn: $lfmScrobble)
+                            .font(.system(size: 12))
+                            .onChange(of: lfmScrobble) { LastFM.scrobbling = lfmScrobble }
+                        Text("♥ in the app also loves the track on Last.fm. If Emby's Last.fm plugin scrobbles for this user too, turn scrobbling off here to avoid doubles.")
+                            .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        field("API key", text: $lfmKey, prompt: "last.fm/api/account/create")
+                        HStack {
+                            Text("Secret").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 82, alignment: .leading)
+                            SecureField("", text: $lfmSecret).textFieldStyle(.roundedBorder)
+                        }
+                        HStack {
+                            if let lfmState { Text(lfmState).font(.system(size: 10.5)).foregroundStyle(.secondary) }
+                            Spacer()
+                            if lfmConnecting { ProgressView().controlSize(.small) }
+                            Button("Connect…", action: connectLastFM)
+                                .controlSize(.small)
+                                .disabled(lfmKey.isEmpty || lfmSecret.isEmpty || lfmConnecting)
+                        }
+                        Text("Scrobbling, ♥ as love, album and artist descriptions. Create a free API account on last.fm, paste the key and secret, then allow access in the browser.")
+                            .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                group("Library", icon: "photo.on.rectangle") {
+                    HStack {
+                        Button("Album Covers from Track Files") { fillCovers() }
+                            .controlSize(.small)
+                            .disabled(coverRunning || !loggedIn)
+                        if coverRunning { ProgressView().controlSize(.small) }
+                    }
+                    if let coverState { Text(coverState).font(.system(size: 10.5)).foregroundStyle(.secondary) }
+                    Text("For albums without a cover in Emby, uses the picture embedded in their tracks and saves it to Emby. For other albums: hover the cover and choose “Find another cover”.")
+                        .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                 }
 
                 group("Phone Remote", icon: "iphone") {
@@ -183,6 +235,35 @@ struct SettingsView: View {
         HStack {
             Text(label).font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 82, alignment: .leading)
             TextField("", text: text, prompt: Text(prompt)).textFieldStyle(.roundedBorder)
+        }
+    }
+
+    private func connectLastFM() {
+        LastFM.apiKey = lfmKey
+        LastFM.secret = lfmSecret
+        lfmConnecting = true
+        lfmState = String(localized: "Allow access in the browser…")
+        Task {
+            do {
+                lfmUser = try await LastFM.shared.connect()
+                lfmState = nil
+            } catch {
+                lfmState = error.localizedDescription
+            }
+            lfmConnecting = false
+        }
+    }
+
+    private func fillCovers() {
+        coverRunning = true
+        coverState = nil
+        Task {
+            let r = await Covers.fillFromTracks { i, n in
+                coverState = String(localized: "Album \(i) of \(n)…")
+            }
+            await Library.shared.load()
+            coverState = String(localized: "Covers added: \(r.fixed). No picture in the files: \(r.missing).")
+            coverRunning = false
         }
     }
 

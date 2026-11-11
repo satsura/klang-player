@@ -175,6 +175,8 @@ struct EmptyState: View {
 /// Track list row used in albums, folders and search.
 struct TrackRow: View {
     @ObservedObject var player = Player.shared
+    @ObservedObject var lyrics = LyricsStore.shared
+    @ObservedObject var lib = Library.shared
     let track: Track
     var number: Int? = nil
     var showArtist = false
@@ -220,6 +222,16 @@ struct TrackRow: View {
                 }
             }
             Spacer(minLength: 4)
+            // Marks: ♥, has lyrics (filled = timed).
+            if lib.isFavorite(track.Id, server: track.isFavorite) {
+                Image(systemName: "heart.fill").font(.system(size: 8.5)).foregroundStyle(.pink.opacity(0.8))
+            }
+            if lyrics.known[track.Id] == true {
+                Image(systemName: lyrics.synced.contains(track.Id) ? "quote.bubble.fill" : "quote.bubble")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .help(lyrics.synced.contains(track.Id) ? LocalizedStringKey("Timed lyrics") : LocalizedStringKey("Lyrics"))
+            }
             Text(mmss(track.duration))
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(.tertiary)
@@ -236,7 +248,7 @@ struct TrackRow: View {
             Divider()
             let fav = Library.shared.isFavorite(track.Id, server: track.isFavorite)
             Button(fav ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Add to Favorites")) {
-                Library.shared.toggleFavorite(track.Id, current: fav)
+                Library.shared.toggleFavorite(track)
             }
             if let onRemove {
                 Divider()

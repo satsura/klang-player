@@ -43,6 +43,11 @@ no conversion, and the Mac isn't in the audio path.
 - **Phone remote**: a web page on the home network, protected by a secret link (QR code)
 - Reports playback to Emby: history, play counts, "Now Playing" in the dashboard,
   Last.fm scrobbling through Emby's Last.fm plugin
+- **Last.fm** (your own free API key): scrobbling, ♥ as love, album and artist descriptions
+- **Lyrics** from [LRCLIB](https://lrclib.net), timed lines follow the song
+- ♥ favorites everywhere: now playing, floating card, menu bar, phone remote
+- **Covers**: copy track pictures to albums without a cover, or pick one from Deezer / iTunes;
+  saved to Emby so every Emby app shows them. Marks on covers: Hi-Res, lyrics, favorite
 - Keyboard: Space play/pause, ←/→ seek, ⌘F search, ⌘↑/⌘↓ volume, Esc back
 
 ## Install

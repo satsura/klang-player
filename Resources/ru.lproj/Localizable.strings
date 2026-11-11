@@ -116,3 +116,39 @@
 "Medium" = "Средний";
 "Large" = "Большой";
 "Previous" = "Предыдущий";
+
+/* Lyrics */
+"Lyrics" = "Текст";
+"Timed lyrics" = "Текст с таймингом";
+"No lyrics found" = "Текст не найден";
+"Instrumental" = "Инструментал";
+"Lyrics: lrclib.net" = "Тексты: lrclib.net";
+"Lyrics: %lld of %lld tracks" = "Текст есть у %lld из %lld треков";
+
+/* Covers */
+"Find another cover" = "Найти другую обложку";
+"Choose a cover" = "Выберите обложку";
+"Cancel" = "Отмена";
+"Saved to Emby: every Emby app will show it." = "Сохранится в Emby — её увидят все приложения Emby.";
+"Nothing found in Deezer and iTunes" = "В Deezer и iTunes ничего не нашлось";
+"Library" = "Медиатека";
+"Album Covers from Track Files" = "Обложки альбомов из файлов";
+"For albums without a cover in Emby, uses the picture embedded in their tracks and saves it to Emby. For other albums: hover the cover and choose “Find another cover”." = "Альбомам без обложки в Emby ставит картинку, зашитую в их треки, и сохраняет её в Emby. Для остальных — наведите на обложку и нажмите «Найти другую обложку».";
+"Album %lld of %lld…" = "Альбом %lld из %lld…";
+"Covers added: %lld. No picture in the files: %lld." = "Обложек добавлено: %lld. Без картинки в файлах: %lld.";
+
+/* About */
+"More" = "Ещё";
+"Less" = "Свернуть";
+
+/* Last.fm */
+"Connected as %@" = "Подключено: %@";
+"Disconnect" = "Отключить";
+"Scrobble played tracks" = "Скробблить прослушанные треки";
+"API key" = "API-ключ";
+"Secret" = "Секрет";
+"Connect…" = "Подключить…";
+"Allow access in the browser…" = "Разрешите доступ в браузере…";
+"Access wasn't allowed in time" = "Доступ не был разрешён вовремя";
+"♥ in the app also loves the track on Last.fm. If Emby's Last.fm plugin scrobbles for this user too, turn scrobbling off here to avoid doubles." = "♥ в приложении ставит love и на Last.fm. Если плагин Last.fm в Emby тоже скробблит этого пользователя, выключите скробблинг здесь, чтобы не было двойных.";
+"Scrobbling, ♥ as love, album and artist descriptions. Create a free API account on last.fm, paste the key and secret, then allow access in the browser." = "Скробблинг, ♥ как love, описания альбомов и артистов. Создайте бесплатный API-аккаунт на last.fm, вставьте ключ и секрет и разрешите доступ в браузере.";

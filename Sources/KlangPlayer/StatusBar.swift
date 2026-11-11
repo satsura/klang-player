@@ -138,6 +138,14 @@ final class StatusBar: NSObject, NSPopoverDelegate {
         menu.addItem(MenuAction(title: MiniPlayer.shared.isVisible ? String(localized: "Close Card") : String(localized: "Show card")) {
             MiniPlayer.shared.toggle()
         })
+        if let t = Player.shared.current {
+            let on = Library.shared.currentIsFavorite
+            let fav = MenuAction(title: on ? String(localized: "Remove from Favorites") : String(localized: "Add to Favorites")) {
+                Library.shared.toggleFavorite(t)
+            }
+            fav.image = NSImage(systemSymbolName: on ? "heart.fill" : "heart", accessibilityDescription: nil)
+            menu.addItem(fav)
+        }
         menu.addItem(.separator())
         menu.addItem(MenuAction(title: String(localized: "Quit")) { NSApp.terminate(nil) })
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)

@@ -30,6 +30,11 @@ final class Integrations {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.update() }
             .store(in: &bag)
+        // ♥ changes: the phone remote shows it.
+        Library.shared.$favoriteOverrides
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.mirrorState() }
+            .store(in: &bag)
         // Position ticks: keep the widget/remote JSON fresh; touch Now Playing only after a jump (seek).
         player.clock.objectWillChange
             .receive(on: RunLoop.main)
@@ -148,6 +153,7 @@ final class Integrations {
             "position": player.position,
             "duration": player.duration,
             "hasNext": !player.upcoming.isEmpty,
+            "favorite": Library.shared.currentIsFavorite,
             "volume": Int(player.volume),
             "maxVolume": Int(player.maxVolume),
             "artId": artTrackId == t?.Id ? (t?.Id ?? "") : "",
@@ -180,6 +186,14 @@ final class Integrations {
             lock.lock(); defer { lock.unlock() }
             guard let art else { return (404, "text/plain", Data()) }
             return (200, "image/jpeg", art)
+        case "/api/love":
+            guard method == "POST" else { return (405, "text/plain", Data()) }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    if let t = Player.shared.current { Library.shared.toggleFavorite(t) }
+                }
+            }
+            return (204, "text/plain", Data())
         case "/api/toggle", "/api/next", "/api/prev":
             guard method == "POST" else { return (405, "text/plain", Data()) }
             DispatchQueue.main.async {

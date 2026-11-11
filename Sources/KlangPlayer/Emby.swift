@@ -73,6 +73,8 @@ struct Track: Identifiable, Hashable, Codable {
     var isFavorite: Bool { UserData?.IsFavorite ?? false }
     /// Album cover, or the track's own cover when the album has none in Emby.
     func artURL(size: Int) -> URL? {
+        // A cover just set in the app: the track still carries the old (or no) tag.
+        if let id = AlbumId, let tag = Covers.changed[id] { return Emby.shared.imageURL(itemId: id, tag: tag, size: size) }
         if let tag = AlbumPrimaryImageTag { return Emby.shared.imageURL(itemId: AlbumId, tag: tag, size: size) }
         return Emby.shared.imageURL(itemId: Id, tag: ImageTags?["Primary"], size: size)
     }
@@ -82,6 +84,8 @@ struct Track: Identifiable, Hashable, Codable {
         MediaSources?.first?.MediaStreams?.first { $0.Type == "Audio" }
     }
     var codec: String { (audioStream?.Codec ?? "").lowercased() }
+    /// More than CD quality: over 16 bit or over 48 kHz.
+    var isHiRes: Bool { (audioStream?.BitDepth ?? 16) > 16 || (audioStream?.SampleRate ?? 44_100) > 48_000 }
     var sampleRate: Int? { audioStream?.SampleRate }
     var container: String { (MediaSources?.first?.Container ?? "flac").lowercased() }
 
@@ -316,6 +320,16 @@ final class Emby {
     }
 
     /// Marks or unmarks an item (track or album) as favorite.
+    /// Artist biography from Emby, if it has one.
+    func artistOverview(_ name: String) async -> String? {
+        let uid = (try? await userId()) ?? ""
+        let path = "/Artists/" + (name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? name)
+        guard let (data, _) = try? await URLSession.shared.data(from: url(path, ["UserId": uid, "Fields": "Overview"])),
+              let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let text = (o["Overview"] as? String).map(LastFM.plainText), !text.isEmpty else { return nil }
+        return text
+    }
+
     func setFavorite(_ id: String, _ on: Bool) async throws {
         let uid = try await userId()
         var r = URLRequest(url: url("/Users/\(uid)/FavoriteItems/\(id)"))

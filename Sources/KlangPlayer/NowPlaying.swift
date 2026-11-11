@@ -2,7 +2,12 @@ import SwiftUI
 
 struct NowPlayingView: View {
     @ObservedObject var player = Player.shared
+    @ObservedObject var lib = Library.shared
     let showQueue: () -> Void
+    let showLyrics: () -> Void
+    let pickCover: (Album) -> Void
+    @ObservedObject private var lyrics = LyricsStore.shared
+    @State private var hoverCover = false
 
     private var art: URL? {
         player.current?.artURL(size: 300)
@@ -12,6 +17,29 @@ struct NowPlayingView: View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
                 Cover(url: art, size: 76, radius: 8, placeholder: "hifispeaker")
+                    .overlay(alignment: .bottomLeading) {
+                        if let t = player.current {
+                            CoverBadges(hiRes: t.isHiRes, lyrics: lyrics.known[t.Id] == true ? (1, 1) : nil)
+                                .onTapGesture(perform: showLyrics)
+                        }
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        if hoverCover, let t = player.current, let a = lib.album(for: t) {
+                            Button { pickCover(a) } label: {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                                    .padding(4).background(.black.opacity(0.6), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(3)
+                            .help("Find another cover")
+                            .accessibilityLabel(Text("Find another cover"))
+                        }
+                    }
+                    .onHover { hoverCover = $0 }
+                    .task(id: player.current?.Id) {
+                        if let t = player.current { _ = await LyricsStore.shared.lyrics(for: t) }
+                    }
                     .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
                 VStack(alignment: .leading, spacing: 3) {
                     Marquee(text: player.current?.Name ?? String(localized: "Nothing playing"),
@@ -42,12 +70,15 @@ struct NowPlayingView: View {
                     .padding(.top, 2)
                 }
                 Spacer(minLength: 0)
+                if let t = player.current {
+                    FavoriteButton(track: t).font(.system(size: 15))
+                }
             }
 
             PositionSlider()
 
             HStack {
-                volume.frame(width: 110)
+                volume.frame(width: 96)
                 Spacer()
                 HStack(spacing: 18) {
                     Button { player.previous() } label: { Image(systemName: "backward.fill").font(.system(size: 15)) }
@@ -62,7 +93,9 @@ struct NowPlayingView: View {
                 .buttonStyle(.borderless)
                 .disabled(player.current == nil)
                 Spacer()
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
+                    Button(action: showLyrics) { Image(systemName: "quote.bubble") }
+                        .help("Lyrics")
                     SleepButton()
                     Button { MiniPlayer.shared.toggle() } label: { Image(systemName: "pip") }
                         .help("Floating card")
@@ -75,7 +108,7 @@ struct NowPlayingView: View {
                     .help("Queue")
                 }
                 .buttonStyle(.borderless)
-                .frame(width: 110, alignment: .trailing)
+                .frame(width: 124, alignment: .trailing)
             }
         }
         .padding(14)
@@ -218,5 +251,22 @@ private struct PositionSlider: View {
             .font(.system(size: 10).monospacedDigit())
             .foregroundStyle(.secondary)
         }
+    }
+}
+
+/// ♥ for a track: Emby favorite, and love on Last.fm when it's connected.
+struct FavoriteButton: View {
+    @ObservedObject var lib = Library.shared
+    let track: Track
+
+    var body: some View {
+        let on = lib.isFavorite(track.Id, server: track.isFavorite)
+        Button { lib.toggleFavorite(track) } label: {
+            Image(systemName: on ? "heart.fill" : "heart")
+                .foregroundStyle(on ? Color.pink : .secondary)
+        }
+        .buttonStyle(.borderless)
+        .help(on ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Add to Favorites"))
+        .accessibilityLabel(on ? Text("Remove from Favorites") : Text("Add to Favorites"))
     }
 }

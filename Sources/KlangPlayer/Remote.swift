@@ -73,6 +73,7 @@ enum Remote {
         #status{font-size:12px;opacity:.6;margin-top:16px;min-height:1em}
         </style></head><body><div id="bg"></div>
         <div id="cover"></div><h1 id="title">\(nothing)</h1><div id="artist"></div>
+        <button id="love" aria-label="♥" style="margin-top:10px;background:none;border:0;padding:6px"><svg width="28" height="28" viewBox="0 0 24 24"><path id="lovep" d="M12 21s-7.5-4.6-10-9.3C.4 8.4 2.4 4.5 6.2 4.5c2.2 0 3.6 1.2 4.3 2.3l1.5 2 1.5-2c.7-1.1 2.1-2.3 4.3-2.3 3.8 0 5.8 3.9 4.2 7.2C19.5 16.4 12 21 12 21z" fill="none" stroke="#fff" stroke-width="1.8"/></svg></button>
         <div class="row" style="margin-top:22px"><input id="pos" type="range" min="0" max="1" step="1" value="0"></div>
         <div class="times"><span id="t1">0:00</span><span id="t2">0:00</span></div>
         <div class="controls">
@@ -102,11 +103,13 @@ enum Remote {
             $('t1').textContent=fmt(s.position);$('t2').textContent='-'+fmt(s.duration-s.position);
             if(!voling){$('vol').max=s.maxVolume;$('vol').value=s.volume}
             $('next').style.opacity=s.hasNext?1:.35;
+            $('lovep').setAttribute('fill',s.favorite?'#ff375f':'none');$('lovep').setAttribute('stroke',s.favorite?'#ff375f':'#fff');
+            $('love').style.visibility=s.title?'visible':'hidden';
             if(s.artId!==art){art=s.artId;const u=art?`url("${q('art','&t='+art)}")`:'';$('cover').style.backgroundImage=u;$('bg').style.backgroundImage=u}
             $('status').textContent='';
           }catch(e){$('status').textContent='\(offline)'}
         }
-        $('play').onclick=()=>post('toggle');$('next').onclick=()=>post('next');$('prev').onclick=()=>post('prev');
+        $('play').onclick=()=>post('toggle');$('next').onclick=()=>post('next');$('prev').onclick=()=>post('prev');$('love').onclick=()=>post('love');
         $('pos').oninput=()=>{seeking=true;$('t1').textContent=fmt($('pos').value)};
         $('pos').onchange=()=>{post('seek','&v='+$('pos').value);seeking=false};
         $('vol').oninput=()=>{voling=true};

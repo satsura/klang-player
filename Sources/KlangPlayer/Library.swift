@@ -88,6 +88,24 @@ final class Library: ObservableObject {
 
     func isFavorite(_ id: String, server: Bool) -> Bool { favoriteOverrides[id] ?? server }
 
+    /// ♥ on a track: Emby favorite plus love on Last.fm.
+    func toggleFavorite(_ t: Track) {
+        let on = !isFavorite(t.Id, server: t.isFavorite)
+        toggleFavorite(t.Id, current: !on)
+        LastFM.shared.love(t, on)
+    }
+
+    /// The album (or merged compilation) a track belongs to.
+    func album(for t: Track) -> Album? {
+        guard let id = t.AlbumId else { return nil }
+        return albums.first { $0.Id == id || $0.parts?.contains { $0.Id == id } == true }
+    }
+
+    /// The current track's ♥ (for menus and the phone remote).
+    var currentIsFavorite: Bool {
+        Player.shared.current.map { isFavorite($0.Id, server: $0.isFavorite) } ?? false
+    }
+
     func toggleFavorite(_ id: String, current: Bool) {
         favoriteOverrides[id] = !current
         Task {

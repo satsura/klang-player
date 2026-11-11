@@ -30,11 +30,13 @@ struct ContentView: View {
     @FocusState private var searchFocused: Bool
     @FocusState private var rootFocused: Bool
 
-    enum Overlay { case settings, queue }
+    enum Overlay: Equatable { case settings, queue, lyrics, cover(Album) }
 
     var body: some View {
         VStack(spacing: 0) {
-            NowPlayingView { overlay = overlay == .queue ? nil : .queue }
+            NowPlayingView(showQueue: { overlay = overlay == .queue ? nil : .queue },
+                           showLyrics: { overlay = overlay == .lyrics ? nil : .lyrics },
+                           pickCover: { overlay = .cover($0) })
             Divider()
             Group {
                 switch overlay {
@@ -42,6 +44,12 @@ struct ContentView: View {
                     SettingsView { overlay = nil; Task { await lib.load() } }
                 case .queue:
                     QueueView { overlay = nil }
+                case .lyrics:
+                    LyricsView { overlay = nil }
+                case .cover(let album):
+                    ScrollView {
+                        CoverPicker(album: album, artist: album.parts == nil ? album.artist : "") { _ in overlay = nil }
+                    }
                 case nil:
                     browser
                 }
@@ -321,34 +329,55 @@ struct AlbumView: View {
     let back: () -> Void
     @State private var tracks: [Track] = []
     @State private var error: String?
+    @State private var pickingCover = false
+    @ObservedObject private var lyricsStore = LyricsStore.shared
+
+    private var lyricsCount: (found: Int, of: Int)? {
+        let checked = tracks.filter { lyricsStore.known[$0.Id] != nil }
+        guard !checked.isEmpty else { return nil }
+        return (checked.filter { lyricsStore.known[$0.Id] == true }.count, tracks.count)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             NavHeader(title: album.artist, back: back)
-            ScrollView {
-                VStack(spacing: 0) {
-                    CollectionHeader(
-                        cover: Emby.shared.imageURL(itemId: album.imageItemId, tag: album.imageTag, size: 300) ?? tracks.first?.artURL(size: 300),
-                        title: album.Name,
-                        subtitle: [album.artist, album.ProductionYear.map(String.init) ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
-                        detail: tracks.isEmpty ? nil : String(localized: "\(tracks.count) tracks") + " · \(totalDuration(tracks)) · \(tracks.first?.sourceLabel ?? "")",
-                        tracks: tracks,
-                        favorite: album.parts != nil ? nil : (
-                            lib.isFavorite(album.Id, server: album.UserData?.IsFavorite ?? false),
-                            { lib.toggleFavorite(album.Id, current: lib.isFavorite(album.Id, server: album.UserData?.IsFavorite ?? false)) }
-                        ))
-                    if let error { Text(error).foregroundStyle(.secondary).padding() }
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(tracks.enumerated()), id: \.element.id) { i, t in
-                            TrackRow(track: t, number: t.IndexNumber) { player.play(tracks, at: i) }
+            if pickingCover {
+                ScrollView {
+                    CoverPicker(album: album, artist: album.parts == nil ? album.artist : "") { _ in pickingCover = false }
+                }
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        CollectionHeader(
+                            cover: Emby.shared.imageURL(itemId: album.imageItemId, tag: album.imageTag, size: 300) ?? tracks.first?.artURL(size: 300),
+                            title: album.Name,
+                            subtitle: [album.artist, album.ProductionYear.map(String.init) ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
+                            detail: tracks.isEmpty ? nil : String(localized: "\(tracks.count) tracks") + " · \(totalDuration(tracks)) · \(tracks.first?.sourceLabel ?? "")",
+                            tracks: tracks,
+                            favorite: album.parts != nil ? nil : (
+                                lib.isFavorite(album.Id, server: album.UserData?.IsFavorite ?? false),
+                                { lib.toggleFavorite(album.Id, current: lib.isFavorite(album.Id, server: album.UserData?.IsFavorite ?? false)) }
+                            ),
+                            badges: CoverBadges(hiRes: tracks.contains(where: \.isHiRes), lyrics: lyricsCount,
+                                                favorite: lib.isFavorite(album.Id, server: album.UserData?.IsFavorite ?? false)),
+                            refreshCover: { pickingCover = true })
+                        if album.parts == nil {
+                            AboutSection(subject: .album(artist: album.artist, name: album.Name))
                         }
+                        if let error { Text(error).foregroundStyle(.secondary).padding() }
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(tracks.enumerated()), id: \.element.id) { i, t in
+                                TrackRow(track: t, number: t.IndexNumber) { player.play(tracks, at: i) }
+                            }
+                        }
+                        .padding(.bottom, 10)
                     }
-                    .padding(.bottom, 10)
                 }
             }
         }
         .task(id: album.Id) {
             do { tracks = try await lib.tracks(for: album) } catch { self.error = error.localizedDescription }
+            await LyricsStore.shared.check(tracks)
         }
     }
 }
@@ -363,10 +392,31 @@ struct CollectionHeader: View {
     let tracks: [Track]
     var favorite: (isOn: Bool, toggle: () -> Void)? = nil
     var placeholder = "music.note"
+    var badges: CoverBadges? = nil
+    /// Shows a "find another cover" button on the cover on hover.
+    var refreshCover: (() -> Void)? = nil
+    @State private var hoverCover = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Cover(url: cover, size: 104, radius: 8, placeholder: placeholder)
+                .overlay(alignment: .bottomLeading) { badges }
+                .overlay(alignment: .topTrailing) {
+                    if let refreshCover, hoverCover {
+                        Button(action: refreshCover) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(5)
+                                .background(.black.opacity(0.6), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(4)
+                        .help("Find another cover")
+                        .accessibilityLabel(Text("Find another cover"))
+                    }
+                }
+                .onHover { hoverCover = $0 }
                 .shadow(color: .black.opacity(0.2), radius: 5, y: 2)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(3)
@@ -473,6 +523,8 @@ struct ArtistView: View {
             }
             .controlSize(.small)
             .padding(.horizontal, 14)
+            .padding(.bottom, 6)
+            AboutSection(subject: .artist(artist.name))
             AlbumsGrid(albums: artist.albums, open: open)
         }
     }
