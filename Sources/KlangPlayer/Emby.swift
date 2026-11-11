@@ -201,6 +201,12 @@ final class Emby {
 
     private let trackFields = "MediaSources"
 
+    func track(id: String) async throws -> Track? {
+        let uid = try await userId()
+        let r: ItemsResponse<Track> = try await get("/Users/\(uid)/Items", ["Ids": id, "Fields": trackFields])
+        return r.Items.first
+    }
+
     func tracks(album: String) async throws -> [Track] {
         let uid = try await userId()
         let r: ItemsResponse<Track> = try await get("/Users/\(uid)/Items", [

@@ -275,3 +275,11 @@ final class CoversTests: XCTestCase {
         XCTAssertEqual(Covers.key("Искусство каменных статуй"), "искусствокаменныхстатуй")
     }
 }
+
+final class AdoptTests: XCTestCase {
+    func testTrackIdFromSpeakerURI() {
+        XCTAssertEqual(Player.trackId(in: "http://192.168.1.195:47830/t/12997256.m4a"), "12997256")
+        XCTAssertEqual(Player.trackId(in: "http://nas:8096/emby/Audio/13002313/stream?static=true&api_key=x"), "13002313")
+        XCTAssertNil(Player.trackId(in: "http://radio.example/stream.mp3"))
+    }
+}

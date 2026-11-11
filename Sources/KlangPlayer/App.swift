@@ -38,6 +38,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = CommandLine.arguments
+        // Debug runs share the app's settings: keep them from saving over the user's queue.
+        let debugFlags: Set = ["--selftest", "--fill-covers", "--discover", "--relocate", "--prepare", "--preview"]
+        if args.contains(where: debugFlags.contains) {
+            MainActor.assumeIsolated { Player.persistQueue = false }
+        }
         // SwiftUI may open the Settings scene on launch (e.g. when started from a terminal); it's only for ⌘,.
         DispatchQueue.main.async {
             for w in NSApp.windows where w.identifier?.rawValue.contains("Settings") == true { w.close() }

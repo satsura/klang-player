@@ -11,6 +11,8 @@ final class PlaybackClock: ObservableObject {
 @MainActor
 final class Player: ObservableObject {
     static let shared = Player()
+    /// Off for debug runs (--selftest, --fill-covers…): they must not overwrite the user's saved queue.
+    static var persistQueue = true
 
     enum State { case idle, preparing, playing, paused }
 
@@ -528,7 +530,8 @@ final class Player: ObservableObject {
     /// Stores queue, current track and position (called every few seconds and on quit).
     /// The queue is written only when it changes; the position is a separate small value.
     func saveQueue() {
-        guard !Speaker.dryRun else { return }
+        // An empty queue is never what the user left (it can't be emptied from the UI): keep the saved one.
+        guard Self.persistQueue, !Speaker.dryRun, !queue.isEmpty else { return }
         UserDefaults.standard.set(position, forKey: "savedPosition")
         let sig = "\(queue.count):\(index):\(current?.Id ?? ""):\(queue.last?.Id ?? "")"
         guard sig != savedSignature else { return }
@@ -539,13 +542,17 @@ final class Player: ObservableObject {
 
     /// Brings back the last queue after a restart, stopped at the saved position.
     func restoreQueue() {
-        guard queue.isEmpty, let data = UserDefaults.standard.data(forKey: "savedQueue") else { return }
+        guard queue.isEmpty else { return }
+        guard let data = UserDefaults.standard.data(forKey: "savedQueue") else { debugLog("restore queue: nothing saved"); return }
         let s: SavedQueue
         do { s = try JSONDecoder().decode(SavedQueue.self, from: data) } catch {
             debugLog("restore queue: \(error)")
             return
         }
-        guard s.queue.indices.contains(s.index) else { return }
+        guard s.queue.indices.contains(s.index) else {
+            debugLog("restore queue: \(s.queue.count) tracks, index \(s.index) — skipped")
+            return
+        }
         let pos = UserDefaults.standard.object(forKey: "savedPosition") as? Double ?? s.position
         queue = s.queue
         index = s.index
@@ -558,7 +565,7 @@ final class Player: ObservableObject {
     /// After an app restart the speaker may still be playing a track of the saved queue:
     /// pick it up (position, state, next track) instead of showing it as stopped.
     func adoptSpeaker(attempt: Int = 1) async {
-        guard state == .idle, !queue.isEmpty else { return }
+        guard state == .idle else { return }
         let info: PositionInfo
         let ts: String
         do {
@@ -574,14 +581,36 @@ final class Player: ObservableObject {
             return
         }
         guard state == .idle, !info.uri.isEmpty, ts == "PLAYING" || ts == "PAUSED_PLAYBACK" else {
-            debugLog("adopt: nothing to pick up (\(ts))")
+            // Stopped on one of our tracks and no queue to show: bring back that album, without playing.
+            if queue.isEmpty, state == .idle, let id = Self.trackId(in: info.uri),
+               let t = try? await Emby.shared.track(id: id), let album = t.AlbumId,
+               let tracks = try? await Emby.shared.tracks(album: album), let i = tracks.firstIndex(where: { $0.Id == id }),
+               queue.isEmpty {
+                queue = tracks
+                index = i
+                duration = tracks[i].duration
+                position = 0
+                debugLog("adopt: speaker stopped, restored the album of \(t.Name)")
+            } else {
+                debugLog("adopt: nothing to pick up (\(ts))")
+            }
             return
         }
         // Our URLs end in /t/<id>.<ext> (converted) or contain /Audio/<id>/ (original from Emby).
         func matches(_ t: Track) -> Bool { info.uri.contains("/t/\(t.Id).") || info.uri.contains("/Audio/\(t.Id)/") }
         let order = Array(queue.indices.dropFirst(max(0, index))) + Array(queue.indices.prefix(max(0, index)))
         guard let i = order.first(where: { matches(queue[$0]) }) else {
-            debugLog("adopt: the speaker plays something else")
+            // Not in the saved queue (or there's none): if it's one of our tracks, queue its album.
+            if let id = Self.trackId(in: info.uri), let t = try? await Emby.shared.track(id: id),
+               let album = t.AlbumId, let tracks = try? await Emby.shared.tracks(album: album),
+               tracks.contains(where: { $0.Id == id }), state == .idle {
+                debugLog("adopt: queued the album of \(t.Name)")
+                queue = tracks
+                index = tracks.firstIndex { $0.Id == id } ?? 0
+                await adoptSpeaker(attempt: attempt)
+            } else {
+                debugLog("adopt: the speaker plays something else")
+            }
             return
         }
         let t = queue[i]
@@ -608,6 +637,18 @@ final class Player: ObservableObject {
         debugLog("adopted \(t.Name) at \(Int(info.rel))s, \(ts)")
         // The next track the speaker holds may point at an old address: hand it a fresh one.
         await queueNext(generation)
+    }
+
+    /// Track id from one of our URLs: …/t/<id>.m4a or …/Audio/<id>/stream…
+    nonisolated static func trackId(in uri: String) -> String? {
+        for pattern in [#"/t/([A-Za-z0-9]+)\."#, #"/Audio/([A-Za-z0-9]+)/"#] {
+            if let r = uri.range(of: pattern, options: .regularExpression) {
+                let m = String(uri[r])
+                return m.split(separator: "/").map(String.init).first { $0 != "t" && $0 != "Audio" }?
+                    .components(separatedBy: ".").first
+            }
+        }
+        return nil
     }
 
     /// Debug (--preview): shows a queue in the UI without touching the speaker.
