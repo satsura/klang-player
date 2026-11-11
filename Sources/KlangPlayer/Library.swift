@@ -95,6 +95,35 @@ final class Library: ObservableObject {
         LastFM.shared.love(t, on)
     }
 
+    // MARK: Popularity (Last.fm)
+
+    /// Album id → listeners on Last.fm.
+    @Published private(set) var listeners: [String: Int] = [:]
+    /// Artist (lowercased) → normalized names of their top tracks.
+    @Published private(set) var popular: [String: Set<String>] = [:]
+    private var popularityLoading = false
+
+    /// Fetches listeners for every album (a few per second; cached for a week).
+    func loadPopularity() async {
+        guard LastFM.hasKey, !popularityLoading else { return }
+        popularityLoading = true
+        defer { popularityLoading = false }
+        for a in albums where a.parts == nil && listeners[a.Id] == nil {
+            if let n = await LastFM.shared.albumListeners(artist: a.artist, album: a.Name) { listeners[a.Id] = n }
+        }
+    }
+
+    func setListeners(_ n: Int, for albumId: String) { listeners[albumId] = n }
+
+    func loadPopularTracks(_ artist: String) async {
+        guard LastFM.hasKey, !artist.isEmpty, popular[artist.lowercased()] == nil else { return }
+        popular[artist.lowercased()] = await LastFM.shared.topTracks(artist)
+    }
+
+    func isPopular(_ t: Track) -> Bool {
+        popular[t.artist.lowercased()]?.contains(LastFM.normalize(t.Name)) == true
+    }
+
     /// Albums without a cover in Emby: the picture embedded in their first track.
     @Published private(set) var trackCovers: [String: URL] = [:]
     private var trackCoverChecked = Set<String>()

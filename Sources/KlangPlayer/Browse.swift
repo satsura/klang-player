@@ -95,7 +95,7 @@ struct ContentView: View {
             } else {
                 switch tab {
                 case .home: HomeView { push($0) }
-                case .albums: AlbumsGrid(albums: lib.albums) { push(.album($0)) }
+                case .albums: AlbumsTab { push(.album($0)) }
                 case .artists: ArtistsList { push(.artist($0)) }
                 case .folders: FolderRoot { push(.folder($0)) }
                 }
@@ -244,6 +244,44 @@ struct SearchField: View {
 
 // MARK: Albums
 
+/// Albums tab: the grid with a sort order (by name or by popularity on Last.fm).
+struct AlbumsTab: View {
+    @ObservedObject var lib = Library.shared
+    @AppStorage("albumSort") private var sort = "name"
+    let open: (Album) -> Void
+
+    private var sorted: [Album] {
+        guard sort == "popular" else { return lib.albums }
+        // Popular first; albums without data keep their order at the end.
+        return lib.albums.enumerated().sorted { x, y in
+            let a = lib.listeners[x.element.Id] ?? -1, b = lib.listeners[y.element.Id] ?? -1
+            return a != b ? a > b : x.offset < y.offset
+        }.map(\.element)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if LastFM.hasKey {
+                HStack {
+                    Spacer()
+                    Picker("Sort", selection: $sort) {
+                        Text("By Name").tag("name")
+                        Text("By Popularity").tag("popular")
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .fixedSize()
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 2)
+            }
+            AlbumsGrid(albums: sorted, open: open)
+        }
+        .task(id: sort) { if sort == "popular" { await lib.loadPopularity() } }
+    }
+}
+
 struct AlbumsGrid: View {
     @ObservedObject var lib = Library.shared
     let albums: [Album]
@@ -355,6 +393,7 @@ struct AlbumView: View {
                             subtitle: [album.artist, album.ProductionYear.map(String.init) ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
                             detail: tracks.isEmpty ? nil : String(localized: "\(tracks.count) tracks") + " · \(totalDuration(tracks)) · \(tracks.first?.sourceLabel ?? "")",
                             tracks: tracks,
+                            popularity: lib.listeners[album.Id],
                             favorite: album.parts != nil ? nil : (
                                 lib.isFavorite(album.Id, server: album.UserData?.IsFavorite ?? false),
                                 { lib.toggleFavorite(album.Id, current: lib.isFavorite(album.Id, server: album.UserData?.IsFavorite ?? false)) }
@@ -378,6 +417,13 @@ struct AlbumView: View {
         }
         .task(id: album.Id) {
             do { tracks = try await lib.tracks(for: album) } catch { self.error = error.localizedDescription }
+            if album.parts == nil {
+                await lib.loadPopularTracks(album.artist)
+                if lib.listeners[album.Id] == nil,
+                   let n = await LastFM.shared.albumListeners(artist: album.artist, album: album.Name) {
+                    lib.setListeners(n, for: album.Id)
+                }
+            }
             await LyricsStore.shared.check(tracks)
         }
     }
@@ -391,6 +437,8 @@ struct CollectionHeader: View {
     let subtitle: String
     let detail: String?
     let tracks: [Track]
+    /// Listeners on Last.fm.
+    var popularity: Int? = nil
     var favorite: (isOn: Bool, toggle: () -> Void)? = nil
     var placeholder = "music.note"
     var badges: CoverBadges? = nil
@@ -426,6 +474,11 @@ struct CollectionHeader: View {
                 }
                 if let detail {
                     Text(detail).font(.system(size: 10.5)).foregroundStyle(.tertiary).lineLimit(1)
+                }
+                if let popularity, popularity > 0 {
+                    Label(String(localized: "\(popularity.formatted(.number.notation(.compactName))) listeners on Last.fm"),
+                          systemImage: "person.2.fill")
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 6)
                 HStack(spacing: 6) {

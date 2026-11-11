@@ -129,13 +129,13 @@ struct SettingsView: View {
 
                 group("Library", icon: "photo.on.rectangle") {
                     HStack {
-                        Button("Album Covers from Track Files") { fillCovers() }
+                        Button("Fill Missing Album Covers") { fillCovers() }
                             .controlSize(.small)
                             .disabled(coverRunning || !loggedIn)
                         if coverRunning { ProgressView().controlSize(.small) }
                     }
                     if let coverState { Text(coverState).font(.system(size: 10.5)).foregroundStyle(.secondary) }
-                    Text("For albums without a cover in Emby, uses the picture embedded in their tracks and saves it to Emby. For other albums: hover the cover and choose “Find another cover”.")
+                    Text("Albums without a cover in Emby get the picture embedded in their tracks, or a cover from Deezer / iTunes when artist and title match exactly. Saved to Emby; existing covers are kept. To change one: hover the cover and choose “Find another cover”.")
                         .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -258,11 +258,11 @@ struct SettingsView: View {
         coverRunning = true
         coverState = nil
         Task {
-            let r = await Covers.fillFromTracks { i, n in
+            let r = await Covers.fillMissing { i, n in
                 coverState = String(localized: "Album \(i) of \(n)…")
             }
             await Library.shared.load()
-            coverState = String(localized: "Covers added: \(r.fixed). No picture in the files: \(r.missing).")
+            coverState = String(localized: "Covers added: \(r.fixed). Not found: \(r.missing).")
             coverRunning = false
         }
     }

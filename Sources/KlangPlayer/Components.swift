@@ -222,7 +222,11 @@ struct TrackRow: View {
                 }
             }
             Spacer(minLength: 4)
-            // Marks: ♥, has lyrics (filled = timed).
+            // Marks: popular on Last.fm, ♥, has lyrics (filled = timed).
+            if lib.isPopular(track) {
+                Image(systemName: "flame.fill").font(.system(size: 9)).foregroundStyle(.orange.opacity(0.85))
+                    .help("Popular on Last.fm")
+            }
             if lib.isFavorite(track.Id, server: track.isFavorite) {
                 Image(systemName: "heart.fill").font(.system(size: 8.5)).foregroundStyle(.pink.opacity(0.8))
             }

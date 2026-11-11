@@ -124,6 +124,8 @@ final class LastFM {
         let summary: String?
         let tags: [String]
         let url: URL?
+        var listeners: Int? = nil
+        var playcount: Int? = nil
     }
 
     private var infoCache: [String: Info?] = [:]
@@ -155,9 +157,53 @@ final class LastFM {
             p["lang"] = "en"
             if let r2 = try? await call(method, p), let o2 = r2[root] as? [String: Any] { text = summary(o2) }
         }
-        let info = Info(summary: text, tags: Array(tags.prefix(5)), url: (o["url"] as? String).flatMap(URL.init(string:)))
+        // Album: listeners / playcount at the top level; artist: inside "stats".
+        let stats = (o["stats"] as? [String: Any]) ?? o
+        let info = Info(summary: text, tags: Array(tags.prefix(5)), url: (o["url"] as? String).flatMap(URL.init(string:)),
+                        listeners: (stats["listeners"] as? String).flatMap(Int.init),
+                        playcount: (stats["playcount"] as? String).flatMap(Int.init))
         infoCache[key] = info
         return info
+    }
+
+    // MARK: Popularity
+
+    /// Album listeners on Last.fm, cached on disk for a week (it's for sorting, not live numbers).
+    func albumListeners(artist: String, album: String) async -> Int? {
+        let key = "\(artist)|\(album)".lowercased()
+        var cache = Self.d.dictionary(forKey: "lastfmListeners") as? [String: [Double]] ?? [:]
+        if let c = cache[key], c.count == 2, Date().timeIntervalSince1970 - c[1] < 7 * 86_400 { return c[0] < 0 ? nil : Int(c[0]) }
+        guard Self.hasKey else { return nil }
+        let p = ["artist": artist, "album": album, "autocorrect": "1"]
+        guard let r = try? await call("album.getInfo", p) else {
+            return nil   // network error: don't cache
+        }
+        let n = ((r["album"] as? [String: Any])?["listeners"] as? String).flatMap(Int.init)
+        cache[key] = [Double(n ?? -1), Date().timeIntervalSince1970]
+        Self.d.set(cache, forKey: "lastfmListeners")
+        return n
+    }
+
+    private var topCache: [String: Set<String>] = [:]
+
+    /// The artist's most played tracks on Last.fm, as normalized names.
+    func topTracks(_ artist: String) async -> Set<String> {
+        let key = artist.lowercased()
+        if let c = topCache[key] { return c }
+        guard Self.hasKey,
+              let r = try? await call("artist.getTopTracks", ["artist": artist, "autocorrect": "1", "limit": "10"]),
+              let list = (r["toptracks"] as? [String: Any])?["track"] as? [[String: Any]] else { return [] }
+        let names = Set(list.compactMap { $0["name"] as? String }.map(Self.normalize))
+        topCache[key] = names
+        return names
+    }
+
+    /// "Song (2011 Remaster)" → "song": for matching track names across services.
+    nonisolated static func normalize(_ name: String) -> String {
+        name.lowercased()
+            .replacingOccurrences(of: #"\s*[\(\[][^\)\]]*[\)\]]"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+-\s+.*(remaster|version|mix|edit|live).*$"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
     }
 
     /// Last.fm summaries are HTML ending with a "Read more on Last.fm" link.

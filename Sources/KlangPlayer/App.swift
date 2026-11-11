@@ -43,6 +43,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for w in NSApp.windows where w.identifier?.rawValue.contains("Settings") == true { w.close() }
         }
         if args.contains("--dark") { NSApp.appearance = NSAppearance(named: .darkAqua) }
+        // Same as Settings → Library → Album Covers from Track Files, without UI.
+        if args.contains("--fill-covers") {
+            Task { @MainActor in
+                await Library.shared.load()
+                let r = await Covers.fillMissing { i, n in print("album \(i)/\(n)") }
+                print("covers added: \(r.fixed), no picture in files: \(r.missing)")
+                exit(0)
+            }
+            return
+        }
         if !args.contains("--discover") && !args.contains("--relocate") {
             Task { @MainActor in
                 if !args.contains("--selftest") && !args.contains("--preview") {

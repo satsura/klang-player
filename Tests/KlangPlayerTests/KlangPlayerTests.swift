@@ -239,6 +239,12 @@ final class LastFMTests: XCTestCase {
         XCTAssertEqual(LastFM.encode("Deadушки & Co"), "Dead%D1%83%D1%88%D0%BA%D0%B8%20%26%20Co")
     }
 
+    func testNormalizeTrackNames() {
+        XCTAssertEqual(LastFM.normalize("Riverside (2011 Remaster)"), "riverside")
+        XCTAssertEqual(LastFM.normalize("Familiar - Live Version"), "familiar")
+        XCTAssertEqual(LastFM.normalize("Wall Of Eyes"), "wall of eyes")
+    }
+
     func testSummaryToPlainText() {
         let html = "Ashes &amp; dust. <b>Bold</b> <a href=\"https://www.last.fm/music/x\">Read more on Last.fm</a>"
         XCTAssertEqual(LastFM.plainText(html), "Ashes & dust. Bold")
@@ -257,5 +263,15 @@ final class LyricsTests: XCTestCase {
         XCTAssertNil(lyrics.current(at: 5))
         XCTAssertEqual(lyrics.current(at: 10), 0)
         XCTAssertEqual(lyrics.current(at: 25), 1)
+    }
+}
+
+final class CoversTests: XCTestCase {
+    func testTitleKey() {
+        XCTAssertEqual(Covers.key("A Decade Of Dreams 1995 - 2005"), Covers.key("Decade of dreams 1995-2005"))
+        XCTAssertEqual(Covers.key("Midnight Radio (CD1)"), Covers.key("Midnight Radio"))
+        XCTAssertEqual(Covers.key("Bohren & der Club of Gore"), Covers.key("Bohren and der Club of Gore"))
+        XCTAssertNotEqual(Covers.key("Sophie Zelmani"), Covers.key("Sing and Dance"))
+        XCTAssertEqual(Covers.key("Искусство каменных статуй"), "искусствокаменныхстатуй")
     }
 }
