@@ -21,6 +21,19 @@ enum Tab: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Filled variant for the selected tab.
+    var selectedIcon: String {
+        switch self {
+        case .recent: "clock.fill"
+        case .albums: "square.stack.fill"
+        case .folders: "folder.fill"
+        case .playlists: "music.note.list"
+        case .favorites: "heart.fill"
+        case .stats: "chart.bar.fill"
+        default: icon
+        }
+    }
+
     var icon: String {
         switch self {
         case .recent: "clock"
@@ -98,11 +111,7 @@ struct BrowserView: View {
         VStack(spacing: 0) {
             if compact {
                 HStack(spacing: 6) {
-                    Picker("", selection: Binding(get: { state.tab }, set: { state.select($0) })) {
-                        ForEach(Tab.popover) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+                    TabBar(state: state)
                     Button {
                         state.searching.toggle()
                         if state.searching { searchFocused.wrappedValue = true } else { state.query = "" }
@@ -157,5 +166,43 @@ struct BrowserView: View {
         case .stats: StatsView(back: state.pop) { state.push($0) }
         case .newArtist(let name): NewArtistView(name: name, back: state.pop)
         }
+    }
+}
+
+/// Icon tabs; the selected one also shows its name.
+struct TabBar: View {
+    @ObservedObject var state: BrowserState
+    @Namespace private var ns
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Tab.popover) { t in
+                let on = state.tab == t
+                Button { withAnimation(.snappy(duration: 0.25)) { state.select(t) } } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: on ? t.selectedIcon : t.icon)
+                            .font(.system(size: 13, weight: .medium))
+                        if on { Text(t.title).font(.system(size: 11.5, weight: .semibold)).lineLimit(1).fixedSize() }
+                    }
+                    .foregroundStyle(on ? Color.primary : .secondary)
+                    .padding(.horizontal, on ? 10 : 0)
+                    .frame(maxWidth: on ? nil : .infinity, minHeight: 26)
+                    .background {
+                        if on {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(Color.primary.opacity(0.1))
+                                .matchedGeometryEffect(id: "tab", in: ns)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(Text(t.title))
+                .accessibilityLabel(Text(t.title))
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .glass(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 }
