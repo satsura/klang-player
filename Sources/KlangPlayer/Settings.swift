@@ -3,7 +3,9 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var player = Player.shared
-    let done: () -> Void
+    /// The Settings window (⌘,): tabs, changes apply at once. The popover: one list with Done.
+    var tabbed = false
+    var done: () -> Void = {}
 
     @State private var server = Config.embyURL
     @State private var user = Config.userName
@@ -36,215 +38,266 @@ struct SettingsView: View {
     private let startLanguage = Config.language
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                group("Emby Server", icon: "server.rack") {
-                    field("Address", text: $server, prompt: "http://192.168.1.10:8096")
-                    if loggedIn {
+        Group {
+            if tabbed {
+                TabView {
+                    page { macGroup }
+                        .tabItem { Label("General", systemImage: "gearshape") }
+                    page {
+                        serverGroup
+                        speakerGroup
+                        if server != Config.embyURL || (speakerIP != Config.speakerIP && !speakerIP.isEmpty) {
+                            HStack { Spacer(); Button("Apply", action: apply).keyboardShortcut(.defaultAction) }
+                        }
+                    }
+                    .tabItem { Label("Speaker", systemImage: "hifispeaker") }
+                    page {
+                        playbackGroup
+                        remoteGroup
+                    }
+                    .tabItem { Label("Playback", systemImage: "play.circle") }
+                    page { lastfmGroup }
+                        .tabItem { Label(String("Last.fm"), systemImage: "music.note.list") }
+                    page { libraryGroup }
+                        .tabItem { Label("Library", systemImage: "photo.on.rectangle") }
+                }
+                .frame(width: 500, height: 560)
+                // Settings apply right away; typed addresses when the window closes.
+                .onDisappear(perform: apply)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        serverGroup
+                        speakerGroup
+                        playbackGroup
+                        lastfmGroup
+                        libraryGroup
+                        remoteGroup
+                        macGroup
                         HStack {
-                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                            Text(Config.userName.isEmpty ? LocalizedStringKey("Connected") : LocalizedStringKey("Signed in as \(Config.userName)"))
-                                .font(.system(size: 12))
                             Spacer()
-                            Button("Sign Out") {
-                                Config.apiKey = ""
-                                Config.userId = ""
-                                loggedIn = false
-                            }
-                            .controlSize(.small)
-                        }
-                    } else {
-                        field("User", text: $user, prompt: "Emby user name")
-                        HStack {
-                            Text("Password").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 82, alignment: .leading)
-                            SecureField("", text: $password).textFieldStyle(.roundedBorder).onSubmit(login)
-                        }
-                        HStack {
-                            if let loginState { Text(loginState).font(.system(size: 11)).foregroundStyle(.red) }
-                            Spacer()
-                            if loggingIn { ProgressView().controlSize(.small) }
-                            Button("Sign In", action: login)
-                                .controlSize(.small)
-                                .disabled(server.isEmpty || user.isEmpty || loggingIn)
+                            Button("Done", action: save)
+                                .keyboardShortcut(.defaultAction)
+                                .disabled(!loggedIn || speakerIP.isEmpty)
                         }
                     }
-                }
-
-                group("Speaker", icon: "hifispeaker") {
-                    HStack {
-                        field("IP", text: $speakerIP, prompt: "192.168.1.20")
-                        Button { Task { await discover() } } label: {
-                            if searching { ProgressView().controlSize(.small) } else { Text("Find") }
-                        }
-                        .controlSize(.small)
-                        .disabled(searching)
-                    }
-                    ForEach(speakers) { s in
-                        HStack(spacing: 8) {
-                            Image(systemName: s.ip == speakerIP ? "largecircle.fill.circle" : "circle")
-                                .foregroundStyle(s.ip == speakerIP ? Color.accentColor : .secondary)
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text(verbatim: s.name).font(.system(size: 12))
-                                Text(verbatim: [s.manufacturer, s.ip, s.formatLabel].filter { !$0.isEmpty }.joined(separator: " · "))
-                                    .font(.system(size: 10)).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                        }
-                        .contentShape(Rectangle())
-                        .pressable { speakerIP = s.ip }
-                    }
-                    Text("Speakers that accept FLAC get the original files. Others (Loewe klang and other Frontier Silicon speakers) get AAC 320.")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                group("Playback", icon: "waveform") {
-                    Toggle("Level loudness (EBU R128)", isOn: $normalize)
-                        .font(.system(size: 12))
-                        .onChange(of: normalize) { Config.normalizeLoudness = normalize }
-                    Text("Brings tracks converted for the speaker to the same loudness, so albums and compilations don't jump in volume. Speakers that get original FLAC files play them as they are.")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
-                    Toggle("When the queue ends, play similar music", isOn: $autoplay)
-                        .font(.system(size: 12))
-                        .onChange(of: autoplay) { player.setAutoplay(autoplay) }
-                }
-
-                group("Last.fm", icon: "music.note.list") {
-                    if LastFM.isConnected, !lfmUser.isEmpty {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                            Text("Connected as \(lfmUser)").font(.system(size: 12))
-                            Spacer()
-                            Button("Disconnect") { LastFM.shared.disconnect(); lfmUser = "" }.controlSize(.small)
-                        }
-                        Toggle("Scrobble played tracks", isOn: $lfmScrobble)
-                            .font(.system(size: 12))
-                            .onChange(of: lfmScrobble) { LastFM.scrobbling = lfmScrobble }
-                        Text("♥ in the app also loves the track on Last.fm. If Emby's Last.fm plugin scrobbles for this user too, turn scrobbling off here to avoid doubles.")
-                            .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        field("API key", text: $lfmKey, prompt: "last.fm/api/account/create")
-                        HStack {
-                            Text("Secret").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 82, alignment: .leading)
-                            SecureField("", text: $lfmSecret).textFieldStyle(.roundedBorder)
-                        }
-                        HStack {
-                            if let lfmState { Text(lfmState).font(.system(size: 10.5)).foregroundStyle(.secondary) }
-                            Spacer()
-                            if lfmConnecting { ProgressView().controlSize(.small) }
-                            Button("Connect…", action: connectLastFM)
-                                .controlSize(.small)
-                                .disabled(lfmKey.isEmpty || lfmSecret.isEmpty || lfmConnecting)
-                        }
-                        Text("Scrobbling, ♥ as love, album and artist descriptions. Create a free API account on last.fm, paste the key and secret, then allow access in the browser.")
-                            .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                group("Library", icon: "photo.on.rectangle") {
-                    HStack {
-                        Button("Fill Missing Album Covers") { fillCovers() }
-                            .controlSize(.small)
-                            .disabled(coverRunning || !loggedIn)
-                        if coverRunning { ProgressView().controlSize(.small) }
-                    }
-                    if let coverState { Text(coverState).font(.system(size: 10.5)).foregroundStyle(.secondary) }
-                    Text("Albums without a cover in Emby get the picture embedded in their tracks, or a cover from Deezer / iTunes when artist and title match exactly. Saved to Emby; existing covers are kept. To change one: hover the cover and choose “Find another cover”.")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
-                }
-
-                group("Phone Remote", icon: "iphone") {
-                    Toggle("Control from a phone on the home network", isOn: $remoteOn)
-                        .font(.system(size: 12))
-                        .onChange(of: remoteOn) { Remote.enabled = remoteOn; remoteURL = Remote.url }
-                    if remoteOn, let url = remoteURL {
-                        HStack(alignment: .top, spacing: 12) {
-                            if let qr = Remote.qrCode(url) {
-                                Image(nsImage: qr).interpolation(.none).resizable().frame(width: 96, height: 96)
-                                    .padding(4).background(.white, in: RoundedRectangle(cornerRadius: 6))
-                            }
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Scan with the phone camera or open the link:")
-                                    .font(.system(size: 10.5)).foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Text(verbatim: url).font(.system(size: 10).monospaced()).textSelection(.enabled).lineLimit(3)
-                                HStack {
-                                    Button("Copy Link") {
-                                        NSPasteboard.general.clearContents()
-                                        NSPasteboard.general.setString(url, forType: .string)
-                                    }
-                                    Button("New Key") { Remote.regenerate(); remoteURL = Remote.url }
-                                        .help("Old links stop working")
-                                }
-                                .controlSize(.small)
-                            }
-                        }
-                    }
-                }
-
-                group("Mac", icon: "laptopcomputer") {
-                    Picker("Show the player", selection: $appMode) {
-                        ForEach(AppMode.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.radioGroup)
-                    .font(.system(size: 12))
-                    .onChange(of: appMode) { AppMode.current = appMode }
-                    Text(appMode.detail)
-                        .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
-                    Toggle("Launch at login", isOn: $loginItem)
-                        .font(.system(size: 12))
-                        .onChange(of: loginItem) {
-                            do {
-                                if loginItem { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-                                loginItemError = nil
-                            } catch {
-                                loginItemError = error.localizedDescription
-                            }
-                        }
-                    if let loginItemError { Text(loginItemError).font(.system(size: 10)).foregroundStyle(.red) }
-                    if appMode.usesMenuBar {
-                        Toggle("Track and buttons in the menu bar", isOn: $menuBar)
-                            .font(.system(size: 12))
-                            .onChange(of: menuBar) { Integrations.showInMenuBar = menuBar }
-                    }
-                    HStack {
-                        Text("Language").font(.system(size: 12))
-                        Spacer()
-                        Picker("", selection: $language) {
-                            Text("System").tag("")
-                            Text(verbatim: "English").tag("en")
-                            Text(verbatim: "Русский").tag("ru")
-                        }
-                        .labelsHidden()
-                        .frame(width: 150)
-                        .onChange(of: language) { Config.language = language }
-                    }
-                    if language != startLanguage {
-                        HStack {
-                            Text("Restart to apply the language").font(.system(size: 11)).foregroundStyle(.secondary)
-                            Spacer()
-                            Button("Restart") { relaunch() }.controlSize(.small)
-                        }
-                    }
-                    HStack {
-                        Text("AAC cache: up to 3 GB").font(.system(size: 11)).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Show") { NSWorkspace.shared.open(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("KlangPlayer")) }
-                            .controlSize(.small)
-                    }
-                }
-
-                HStack {
-                    Spacer()
-                    Button("Done", action: save)
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(!loggedIn || speakerIP.isEmpty)
+                    .padding(16)
                 }
             }
-            .padding(16)
         }
         .task { if speakers.isEmpty && Config.speakerIP.isEmpty { await discover() } }
     }
+
+    private var serverGroup: some View {
+        group("Emby Server", icon: "server.rack") {
+            field("Address", text: $server, prompt: "http://192.168.1.10:8096")
+            if loggedIn {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text(Config.userName.isEmpty ? LocalizedStringKey("Connected") : LocalizedStringKey("Signed in as \(Config.userName)"))
+                        .font(.system(size: 12))
+                    Spacer()
+                    Button("Sign Out") {
+                        Config.apiKey = ""
+                        Config.userId = ""
+                        loggedIn = false
+                    }
+                    .controlSize(.small)
+                }
+            } else {
+                field("User", text: $user, prompt: "Emby user name")
+                HStack {
+                    Text("Password").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 82, alignment: .leading)
+                    SecureField("", text: $password).textFieldStyle(.roundedBorder).onSubmit(login)
+                }
+                HStack {
+                    if let loginState { Text(loginState).font(.system(size: 11)).foregroundStyle(.red) }
+                    Spacer()
+                    if loggingIn { ProgressView().controlSize(.small) }
+                    Button("Sign In", action: login)
+                        .controlSize(.small)
+                        .disabled(server.isEmpty || user.isEmpty || loggingIn)
+                }
+            }
+        }
+    }
+
+    private var speakerGroup: some View {
+        group("Speaker", icon: "hifispeaker") {
+            HStack {
+                field("IP", text: $speakerIP, prompt: "192.168.1.20")
+                Button { Task { await discover() } } label: {
+                    if searching { ProgressView().controlSize(.small) } else { Text("Find") }
+                }
+                .controlSize(.small)
+                .disabled(searching)
+            }
+            ForEach(speakers) { s in
+                HStack(spacing: 8) {
+                    Image(systemName: s.ip == speakerIP ? "largecircle.fill.circle" : "circle")
+                        .foregroundStyle(s.ip == speakerIP ? Color.accentColor : .secondary)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(verbatim: s.name).font(.system(size: 12))
+                        Text(verbatim: [s.manufacturer, s.ip, s.formatLabel].filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+                .pressable { speakerIP = s.ip }
+            }
+            Text("Speakers that accept FLAC get the original files. Others (Loewe klang and other Frontier Silicon speakers) get AAC 320.")
+                .font(.system(size: 10)).foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var playbackGroup: some View {
+        group("Playback", icon: "waveform") {
+            Toggle("Level loudness (EBU R128)", isOn: $normalize)
+                .font(.system(size: 12))
+                .onChange(of: normalize) { Config.normalizeLoudness = normalize }
+            Text("Brings tracks converted for the speaker to the same loudness, so albums and compilations don't jump in volume. Speakers that get original FLAC files play them as they are.")
+                .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+            Toggle("When the queue ends, play similar music", isOn: $autoplay)
+                .font(.system(size: 12))
+                .onChange(of: autoplay) { player.setAutoplay(autoplay) }
+        }
+    }
+
+    private var lastfmGroup: some View {
+        group("Last.fm", icon: "music.note.list") {
+            if LastFM.isConnected, !lfmUser.isEmpty {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text("Connected as \(lfmUser)").font(.system(size: 12))
+                    Spacer()
+                    Button("Disconnect") { LastFM.shared.disconnect(); lfmUser = "" }.controlSize(.small)
+                }
+                Toggle("Scrobble played tracks", isOn: $lfmScrobble)
+                    .font(.system(size: 12))
+                    .onChange(of: lfmScrobble) { LastFM.scrobbling = lfmScrobble }
+                Text("♥ in the app also loves the track on Last.fm. If Emby's Last.fm plugin scrobbles for this user too, turn scrobbling off here to avoid doubles.")
+                    .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                field("API key", text: $lfmKey, prompt: "last.fm/api/account/create")
+                HStack {
+                    Text("Secret").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 82, alignment: .leading)
+                    SecureField("", text: $lfmSecret).textFieldStyle(.roundedBorder)
+                }
+                HStack {
+                    if let lfmState { Text(lfmState).font(.system(size: 10.5)).foregroundStyle(.secondary) }
+                    Spacer()
+                    if lfmConnecting { ProgressView().controlSize(.small) }
+                    Button("Connect…", action: connectLastFM)
+                        .controlSize(.small)
+                        .disabled(lfmKey.isEmpty || lfmSecret.isEmpty || lfmConnecting)
+                }
+                Text("Scrobbling, ♥ as love, album and artist descriptions. Create a free API account on last.fm, paste the key and secret, then allow access in the browser.")
+                    .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var libraryGroup: some View {
+        group("Library", icon: "photo.on.rectangle") {
+            HStack {
+                Button("Fill Missing Album Covers") { fillCovers() }
+                    .controlSize(.small)
+                    .disabled(coverRunning || !loggedIn)
+                if coverRunning { ProgressView().controlSize(.small) }
+            }
+            if let coverState { Text(coverState).font(.system(size: 10.5)).foregroundStyle(.secondary) }
+            Text("Albums without a cover in Emby get the picture embedded in their tracks, or a cover from Deezer / iTunes when artist and title match exactly. Saved to Emby; existing covers are kept. To change one: hover the cover and choose “Find another cover”.")
+                .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var remoteGroup: some View {
+        group("Phone Remote", icon: "iphone") {
+            Toggle("Control from a phone on the home network", isOn: $remoteOn)
+                .font(.system(size: 12))
+                .onChange(of: remoteOn) { Remote.enabled = remoteOn; remoteURL = Remote.url }
+            if remoteOn, let url = remoteURL {
+                HStack(alignment: .top, spacing: 12) {
+                    if let qr = Remote.qrCode(url) {
+                        Image(nsImage: qr).interpolation(.none).resizable().frame(width: 96, height: 96)
+                            .padding(4).background(.white, in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Scan with the phone camera or open the link:")
+                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(verbatim: url).font(.system(size: 10).monospaced()).textSelection(.enabled).lineLimit(3)
+                        HStack {
+                            Button("Copy Link") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(url, forType: .string)
+                            }
+                            Button("New Key") { Remote.regenerate(); remoteURL = Remote.url }
+                                .help("Old links stop working")
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            }
+        }
+    }
+
+    private var macGroup: some View {
+        group("Mac", icon: "laptopcomputer") {
+            Picker("Show the player", selection: $appMode) {
+                ForEach(AppMode.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.radioGroup)
+            .font(.system(size: 12))
+            .onChange(of: appMode) { AppMode.current = appMode }
+            Text(appMode.detail)
+                .font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+            Toggle("Launch at login", isOn: $loginItem)
+                .font(.system(size: 12))
+                .onChange(of: loginItem) {
+                    do {
+                        if loginItem { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+                        loginItemError = nil
+                    } catch {
+                        loginItemError = error.localizedDescription
+                    }
+                }
+            if let loginItemError { Text(loginItemError).font(.system(size: 10)).foregroundStyle(.red) }
+            if appMode.usesMenuBar {
+                Toggle("Track and buttons in the menu bar", isOn: $menuBar)
+                    .font(.system(size: 12))
+                    .onChange(of: menuBar) { Integrations.showInMenuBar = menuBar }
+            }
+            HStack {
+                Text("Language").font(.system(size: 12))
+                Spacer()
+                Picker("", selection: $language) {
+                    Text("System").tag("")
+                    Text(verbatim: "English").tag("en")
+                    Text(verbatim: "Русский").tag("ru")
+                }
+                .labelsHidden()
+                .frame(width: 150)
+                .onChange(of: language) { Config.language = language }
+            }
+            if language != startLanguage {
+                HStack {
+                    Text("Restart to apply the language").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Restart") { relaunch() }.controlSize(.small)
+                }
+            }
+            HStack {
+                Text("AAC cache: up to 3 GB").font(.system(size: 11)).foregroundStyle(.secondary)
+                Spacer()
+                Button("Show") { NSWorkspace.shared.open(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("KlangPlayer")) }
+                    .controlSize(.small)
+            }
+        }
+    }
+
 
     private func group<C: View>(_ title: LocalizedStringKey, icon: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -336,12 +389,28 @@ struct SettingsView: View {
     }
 
     private func save() {
-        if server != Config.embyURL { Config.embyURL = server }
+        apply()
+        done()
+    }
+
+    private func apply() {
+        var changed = false
+        if server != Config.embyURL { Config.embyURL = server; changed = true }
         if speakerIP != Config.speakerIP, !speakerIP.isEmpty {
             // A speaker from the list, or a Frontier speaker typed in by IP.
             player.useSpeaker(speakers.first { $0.ip == speakerIP } ?? .frontier(ip: speakerIP))
+            changed = true
         }
-        Task { await player.refreshVolume() }
-        done()
+        if changed {
+            Task { await player.refreshVolume() }
+            Task { await Library.shared.load() }
+        }
+    }
+
+    private func page<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) { content() }
+                .padding(20)
+        }
     }
 }

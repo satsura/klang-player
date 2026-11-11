@@ -17,11 +17,14 @@ final class LibraryWindow: NSObject, NSWindowDelegate {
                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                              backing: .buffered, defer: false)
             w.title = "Klang Player"
-            w.titlebarAppearsTransparent = true
+            w.toolbarStyle = .unified
             w.contentMinSize = NSSize(width: 1000, height: 560)
             w.isReleasedWhenClosed = false
             w.delegate = self
-            w.contentViewController = NSHostingController(rootView: LibraryWindowView())
+            let host = NSHostingController(rootView: LibraryWindowView())
+            // SwiftUI's .toolbar, .searchable and .navigationTitle go to this window.
+            host.sceneBridgingOptions = [.toolbars, .title]
+            w.contentViewController = host
             if !w.setFrameUsingName("KlangLibraryWindow") { w.center() }
             w.setFrameAutosaveName("KlangLibraryWindow")
             window = w
@@ -83,6 +86,19 @@ struct LibraryWindowView: View {
         } content: {
             BrowserView(state: nav, compact: false, searchFocused: $searchFocused)
                 .navigationSplitViewColumnWidth(min: 420, ideal: 560)
+                .navigationTitle(nav.title)
+                .toolbar {
+                    ToolbarItemGroup(placement: .navigation) {
+                        Button { nav.pop() } label: { Image(systemName: "chevron.left") }
+                            .tip("Back")
+                            .keyboardShortcut("[", modifiers: .command)
+                            .disabled(!nav.canGoBack)
+                        Button { nav.goForward() } label: { Image(systemName: "chevron.right") }
+                            .tip("Forward")
+                            .keyboardShortcut("]", modifiers: .command)
+                            .disabled(!nav.canGoForward)
+                    }
+                }
         } detail: {
             VStack(spacing: 0) {
                 NowPlayingView(showQueue: { pane = .queue }, showLyrics: { pane = .lyrics }, pickCover: { coverAlbum = $0 })
@@ -102,6 +118,8 @@ struct LibraryWindowView: View {
             }
             .frame(width: 520, height: 480)
         }
+        .searchable(text: $nav.query, placement: .toolbar, prompt: Text("Search"))
+        .modifier(SearchFocus(focused: $searchFocused))
         .background {
             Button("") { searchFocused = true }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true)
         }
@@ -111,5 +129,13 @@ struct LibraryWindowView: View {
             player.toggle()
             return .handled
         }
+    }
+}
+
+/// ⌘F into the toolbar search (macOS 15+; before that a click on the field).
+private struct SearchFocus: ViewModifier {
+    var focused: FocusState<Bool>.Binding
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) { content.searchFocused(focused) } else { content }
     }
 }

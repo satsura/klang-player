@@ -7,11 +7,7 @@ struct KlangPlayerApp: App {
     // open this window, so it shows the same settings as the popover.
     var body: some Scene {
         Settings {
-            SettingsView {
-                NSApp.keyWindow?.close()
-                Task { await Library.shared.load() }
-            }
-            .frame(width: 420, height: 640)
+            SettingsView(tabbed: true)
         }
         .commands { PlayerCommands() }
     }

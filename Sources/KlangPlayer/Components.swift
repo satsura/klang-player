@@ -128,8 +128,14 @@ extension View {
 struct NavHeader: View {
     let title: String
     let back: () -> Void
+    @Environment(\.wideBrowser) private var wide
 
     var body: some View {
+        // In the window the toolbar has the title and ‹ ›.
+        if !wide { bar }
+    }
+
+    private var bar: some View {
         HStack(spacing: 4) {
             Button(action: back) {
                 Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold))
@@ -138,6 +144,7 @@ struct NavHeader: View {
             }
             .buttonStyle(.borderless)
             .keyboardShortcut(.leftArrow, modifiers: .command)
+            .accessibilityLabel(Text("Back"))
             Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
             Spacer()
         }

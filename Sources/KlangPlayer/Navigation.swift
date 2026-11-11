@@ -8,6 +8,19 @@ enum Tab: String, CaseIterable, Identifiable {
     var id: Self { self }
     static let popover: [Tab] = [.recent, .discover, .albums, .artists, .folders]
 
+    var name: String {
+        switch self {
+        case .recent: String(localized: "Recent")
+        case .discover: String(localized: "Discover")
+        case .albums: String(localized: "Albums")
+        case .artists: String(localized: "Artists")
+        case .folders: String(localized: "Folders")
+        case .playlists: String(localized: "Playlists")
+        case .favorites: String(localized: "Favorites")
+        case .stats: String(localized: "Statistics")
+        }
+    }
+
     var title: LocalizedStringKey {
         switch self {
         case .recent: "Recent"
@@ -57,6 +70,17 @@ enum Route: Hashable {
     case stats
     /// An artist that isn't in the library (from Discover or "similar artists").
     case newArtist(String)
+
+    var title: String {
+        switch self {
+        case .album(let a): a.Name
+        case .artist(let a): a.name
+        case .folder(let f), .playlist(let f): f.Name
+        case .favorites: String(localized: "Favorites")
+        case .stats: String(localized: "Statistics")
+        case .newArtist(let n): n
+        }
+    }
 }
 
 /// Tab, back stacks and search of one browser (the popover and the large window each have one).
@@ -66,6 +90,8 @@ final class BrowserState: ObservableObject {
         didSet { UserDefaults.standard.set(tab.rawValue, forKey: "tab") }
     }
     @Published var stacks: [Tab: [Route]] = [:]
+    /// Where "forward" goes after going back (per tab, like a browser).
+    @Published var forward: [Tab: [Route]] = [:]
     @Published var query = ""
     @Published var searching = false
 
@@ -82,9 +108,27 @@ final class BrowserState: ObservableObject {
             searching = false
         }
         stacks[tab, default: []].append(r)
+        forward[tab] = []
     }
 
-    func pop() { _ = stacks[tab]?.popLast() }
+    func pop() {
+        guard let r = stacks[tab]?.popLast() else { return }
+        forward[tab, default: []].append(r)
+    }
+
+    var canGoBack: Bool { !(stacks[tab]?.isEmpty ?? true) }
+    var canGoForward: Bool { !(forward[tab]?.isEmpty ?? true) }
+
+    func goForward() {
+        guard let r = forward[tab]?.popLast() else { return }
+        stacks[tab, default: []].append(r)
+    }
+
+    /// The window title: the open page, else the tab.
+    var title: String {
+        if !query.trimmingCharacters(in: .whitespaces).isEmpty { return String(localized: "Search") }
+        return stacks[tab]?.last?.title ?? tab.name
+    }
 
     /// Esc: clear search → go back. Returns false if there was nothing to do.
     func back() -> Bool {
@@ -95,7 +139,7 @@ final class BrowserState: ObservableObject {
 
     /// Shows a tab from its start (a click on the current tab returns to its root).
     func select(_ t: Tab) {
-        if t == tab { stacks[t] = [] }
+        if t == tab { stacks[t] = []; forward[t] = [] }
         tab = t
     }
 }
@@ -115,8 +159,8 @@ struct BrowserView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .safeAreaInset(edge: .top, spacing: 0) { header }
             } else {
-                // The window: under its transparent title bar, so the search stays above the list.
-                VStack(spacing: 0) { header; content }
+                // The window: search, title and ‹ › are in its toolbar.
+                content.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .environment(\.wideBrowser, !compact)
