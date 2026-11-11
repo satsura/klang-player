@@ -27,7 +27,7 @@ struct CoverBadges: View {
         content
             .padding(.horizontal, 4).padding(.vertical, 2)
             .foregroundStyle(.white)
-            .background(.black.opacity(0.6), in: Capsule())
+            .glass(Capsule(), overImage: true)
     }
 }
 

@@ -9,12 +9,12 @@ final class LibraryWindow: NSObject, NSWindowDelegate {
 
     func show(activate: Bool = true) {
         if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1160, height: 740),
                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                              backing: .buffered, defer: false)
             w.title = "Klang Player"
             w.titlebarAppearsTransparent = true
-            w.contentMinSize = NSSize(width: 900, height: 560)
+            w.contentMinSize = NSSize(width: 1000, height: 560)
             w.isReleasedWhenClosed = false
             w.delegate = self
             w.contentViewController = NSHostingController(rootView: LibraryWindowView())
@@ -35,6 +35,7 @@ final class LibraryWindow: NSObject, NSWindowDelegate {
 }
 
 struct LibraryWindowView: View {
+    @ObservedObject private var player = Player.shared
     @StateObject private var nav = BrowserState()
     @FocusState private var searchFocused: Bool
     @State private var pane: Pane = .queue
@@ -74,15 +75,15 @@ struct LibraryWindowView: View {
         } detail: {
             VStack(spacing: 0) {
                 NowPlayingView(showQueue: { pane = .queue }, showLyrics: { pane = .lyrics }, pickCover: { coverAlbum = $0 })
-                Divider()
                 Picker("", selection: $pane) { ForEach(Pane.allCases) { Text($0.title).tag($0) } }
-                    .pickerStyle(.segmented).labelsHidden().padding(8)
+                    .pickerStyle(.segmented).labelsHidden().padding(.horizontal, 14).padding(.bottom, 6)
                 switch pane {
                 case .queue: QueueView(close: {}, showsBack: false)
                 case .lyrics: LyricsView(close: { pane = .queue })
                 }
             }
-            .navigationSplitViewColumnWidth(min: 340, ideal: 380)
+            .background { AmbientArt(url: player.current?.artURL(size: 300)).ignoresSafeArea() }
+            .navigationSplitViewColumnWidth(min: 390, ideal: 410)
         }
         .sheet(item: $coverAlbum) { a in
             ScrollView {

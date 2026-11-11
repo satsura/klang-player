@@ -15,7 +15,6 @@ struct ContentView: View {
             NowPlayingView(showQueue: { overlay = overlay == .queue ? nil : .queue },
                            showLyrics: { overlay = overlay == .lyrics ? nil : .lyrics },
                            pickCover: { overlay = .cover($0) })
-            Divider()
             Group {
                 switch overlay {
                 case .settings:
@@ -33,9 +32,10 @@ struct ContentView: View {
                 }
             }
             .frame(maxHeight: .infinity)
-            Divider()
-            footer
+            // The footer floats over the content, which scrolls under it.
+            .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         }
+        .background { AmbientArt(url: player.current?.artURL(size: 300)) }
         .frame(width: 400, height: 680)
         .focusable()
         .focusEffectDisabled()
@@ -101,7 +101,10 @@ struct ContentView: View {
                 .help("Quit")
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        .padding(.vertical, 6)
+        .glass(Capsule())
+        .padding(.horizontal, 10)
+        .padding(.bottom, 8)
     }
 
     /// Speaker name with a menu to switch to another speaker.
@@ -162,9 +165,9 @@ struct SearchField: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .glass(Capsule())
     }
 }
 
@@ -379,17 +382,9 @@ struct CollectionHeader: View {
                 .overlay(alignment: .bottomLeading) { badges }
                 .overlay(alignment: .topTrailing) {
                     if let refreshCover, hoverCover {
-                        Button(action: refreshCover) {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(5)
-                                .background(.black.opacity(0.6), in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(4)
-                        .help("Find another cover")
-                        .accessibilityLabel(Text("Find another cover"))
+                        GlassIconButton(icon: "arrow.triangle.2.circlepath", label: "Find another cover",
+                                        size: 24, symbolSize: 10, overImage: true, action: refreshCover)
+                            .padding(4)
                     }
                 }
                 .onHover { hoverCover = $0 }

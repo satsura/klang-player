@@ -108,31 +108,41 @@ struct BrowserView: View {
     var searchFocused: FocusState<Bool>.Binding
 
     var body: some View {
-        VStack(spacing: 0) {
+        Group {
             if compact {
-                HStack(spacing: 6) {
-                    TabBar(state: state)
-                    Button {
-                        state.searching.toggle()
-                        if state.searching { searchFocused.wrappedValue = true } else { state.query = "" }
-                    } label: {
-                        Image(systemName: state.searching ? "xmark.circle.fill" : "magnifyingglass")
+                // The popover: the bar floats in glass and lists scroll under it.
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .safeAreaInset(edge: .top, spacing: 0) { header }
+            } else {
+                // The window: under its transparent title bar, so the search stays above the list.
+                VStack(spacing: 0) { header; content }
+            }
+        }
+        .onChange(of: state.query) { lib.search(state.query) }
+    }
+
+    private var header: some View {
+        VStack(spacing: 8) {
+            if compact {
+                GlassGroup(spacing: 6) {
+                    HStack(spacing: 6) {
+                        TabBar(state: state)
+                        GlassIconButton(icon: state.searching ? "xmark" : "magnifyingglass",
+                                        label: "Search (⌘F)", size: 30, symbolSize: 12) {
+                            state.searching.toggle()
+                            if state.searching { searchFocused.wrappedValue = true } else { state.query = "" }
+                        }
                     }
-                    .buttonStyle(.borderless)
-                    .help("Search (⌘F)")
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
             }
             if !compact || state.searching || !state.query.isEmpty {
                 SearchField(text: $state.query, focused: searchFocused)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-                    .padding(.top, compact ? 0 : 10)
             }
-            content
         }
-        .onChange(of: state.query) { lib.search(state.query) }
+        .padding(.horizontal, 12)
+        .padding(.top, compact ? 2 : 10)
+        .padding(.bottom, 8)
     }
 
     @ViewBuilder
@@ -189,7 +199,7 @@ struct TabBar: View {
                     .frame(maxWidth: on ? nil : .infinity, minHeight: 26)
                     .background {
                         if on {
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            Capsule()
                                 .fill(Color.primary.opacity(0.1))
                                 .matchedGeometryEffect(id: "tab", in: ns)
                         }
@@ -203,6 +213,6 @@ struct TabBar: View {
             }
         }
         .padding(2)
-        .glass(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .glass(Capsule())
     }
 }

@@ -265,12 +265,88 @@ struct TrackRow: View {
 
 extension View {
     /// Liquid Glass on macOS 26+, a translucent material before.
+    /// `overImage`: the clear variant for controls that sit on artwork.
     @ViewBuilder
-    func glass<S: Shape>(_ shape: S, interactive: Bool = false) -> some View {
+    func glass<S: Shape>(_ shape: S, interactive: Bool = false, tint: Color? = nil, overImage: Bool = false) -> some View {
         if #available(macOS 26, *) {
-            self.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+            self.glassEffect(Self.glassStyle(interactive: interactive, tint: tint, overImage: overImage), in: shape)
+        } else if overImage {
+            self.background((tint ?? .black).opacity(0.55), in: shape)
         } else {
-            self.background(.ultraThinMaterial, in: shape)
+            self.background((tint ?? .clear).opacity(0.8), in: shape)
+                .background(.ultraThinMaterial, in: shape)
         }
+    }
+
+    @available(macOS 26, *)
+    private static func glassStyle(interactive: Bool, tint: Color?, overImage: Bool) -> Glass {
+        var g: Glass = overImage ? .clear : .regular
+        if let tint { g = g.tint(tint) } else if overImage { g = g.tint(.black.opacity(0.25)) }
+        return interactive ? g.interactive() : g
+    }
+}
+
+/// Lets neighbouring glass shapes blend and morph into each other (macOS 26+).
+struct GlassGroup<Content: View>: View {
+    var spacing: CGFloat = 8
+    @ViewBuilder var content: Content
+    var body: some View {
+        if #available(macOS 26, *) {
+            GlassEffectContainer(spacing: spacing) { content }
+        } else {
+            content
+        }
+    }
+}
+
+/// Round glass button with a symbol; `prominent` tints it with the accent colour.
+struct GlassIconButton: View {
+    let icon: String
+    let label: LocalizedStringKey
+    var size: CGFloat = 30
+    var symbolSize: CGFloat = 12
+    var prominent = false
+    var overImage = false
+    let action: () -> Void
+    @Environment(\.isEnabled) private var enabled
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: symbolSize, weight: .semibold))
+                .foregroundStyle(prominent || overImage ? Color.white : .primary)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: size, height: size)
+                .contentShape(Circle())
+                .glass(Circle(), interactive: true, tint: prominent ? .accentColor : nil, overImage: overImage)
+                .opacity(enabled ? 1 : 0.4)
+        }
+        .buttonStyle(.plain)
+        .help(Text(label))
+        .accessibilityLabel(Text(label))
+    }
+}
+
+/// Blurred artwork that tints the whole window, like the system players.
+struct AmbientArt: View {
+    let url: URL?
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        Color.clear
+            .overlay {
+                if let url, !reduceTransparency {
+                    AsyncImage(url: url) { $0.image?.resizable().aspectRatio(contentMode: .fill) }
+                        .id(url)
+                        .blur(radius: 50)
+                        .saturation(1.4)
+                        .opacity(0.55)
+                        .transition(.opacity)
+                }
+            }
+            .mask(LinearGradient(colors: [.black, .black.opacity(0.3)], startPoint: .top, endPoint: .bottom))
+            .clipped()
+            .allowsHitTesting(false)
+            .animation(.easeInOut(duration: 0.6), value: url)
     }
 }

@@ -25,15 +25,9 @@ struct NowPlayingView: View {
                     }
                     .overlay(alignment: .topTrailing) {
                         if hoverCover, let t = player.current, let a = lib.album(for: t) {
-                            Button { pickCover(a) } label: {
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                                    .font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
-                                    .padding(4).background(.black.opacity(0.6), in: Circle())
-                            }
-                            .buttonStyle(.plain)
-                            .padding(3)
-                            .help("Find another cover")
-                            .accessibilityLabel(Text("Find another cover"))
+                            GlassIconButton(icon: "arrow.triangle.2.circlepath", label: "Find another cover",
+                                            size: 22, symbolSize: 9, overImage: true) { pickCover(a) }
+                                .padding(3)
                         }
                     }
                     .onHover { hoverCover = $0 }
@@ -77,54 +71,52 @@ struct NowPlayingView: View {
 
             PositionSlider()
 
-            HStack {
-                volume.frame(width: 96)
-                Spacer()
-                HStack(spacing: 18) {
-                    Button { player.previous() } label: { Image(systemName: "backward.fill").font(.system(size: 15)) }
-                    Button { player.toggle() } label: {
-                        Image(systemName: player.state == .playing ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.system(size: 34))
-                            .symbolRenderingMode(.hierarchical)
-                    }
-                    Button { player.next() } label: { Image(systemName: "forward.fill").font(.system(size: 15)) }
-                        .disabled(!player.hasNext)
-                }
-                .buttonStyle(.borderless)
-                .disabled(player.current == nil)
-                Spacer()
-                HStack(spacing: 10) {
-                    Button(action: showLyrics) { Image(systemName: "quote.bubble") }
-                        .help("Lyrics")
-                    SleepButton()
-                    Button { MiniPlayer.shared.toggle() } label: { Image(systemName: "pip") }
-                        .help("Floating card")
-                    Button(action: showQueue) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "list.bullet")
-                            if !player.upcoming.isEmpty { Text("\(player.upcoming.count)").font(.system(size: 10).monospacedDigit()) }
-                        }
-                    }
-                    .help("Queue")
-                }
-                .buttonStyle(.borderless)
-                .frame(width: 124, alignment: .trailing)
+            HStack(spacing: 8) {
+                volume.frame(maxWidth: .infinity, alignment: .leading)
+                transport
+                tools.frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
         .padding(14)
-        .background {
-            ZStack {
-                if player.current != nil {
-                    AsyncImage(url: art) { $0.image?.resizable().aspectRatio(contentMode: .fill) }
-                        .id(art)
-                        .blur(radius: 40)
-                        .opacity(0.45)
-                }
-                LinearGradient(colors: [.clear, Color(nsColor: .windowBackgroundColor).opacity(0.6)],
-                               startPoint: .top, endPoint: .bottom)
+    }
+
+    /// ⏮ ⏯ ⏭ as glass circles that blend into each other.
+    private var transport: some View {
+        GlassGroup(spacing: 10) {
+            HStack(spacing: 6) {
+                GlassIconButton(icon: "backward.fill", label: "Previous", size: 32) { player.previous() }
+                GlassIconButton(icon: player.state == .playing ? "pause.fill" : "play.fill",
+                                label: player.state == .playing ? "Pause" : "Play",
+                                size: 44, symbolSize: 17, prominent: true) { player.toggle() }
+                GlassIconButton(icon: "forward.fill", label: "Next", size: 32) { player.next() }
+                    .disabled(!player.hasNext)
             }
         }
-        .clipped()
+        .disabled(player.current == nil)
+    }
+
+    /// Lyrics, sleep timer, floating card and queue in one glass capsule.
+    private var tools: some View {
+        HStack(spacing: 9) {
+            Button(action: showLyrics) { Image(systemName: "quote.bubble") }
+                .help("Lyrics")
+            SleepButton()
+            Button { MiniPlayer.shared.toggle() } label: { Image(systemName: "pip") }
+                .help("Floating card")
+            Button(action: showQueue) {
+                HStack(spacing: 3) {
+                    Image(systemName: "list.bullet")
+                    if !player.upcoming.isEmpty { Text("\(player.upcoming.count)").font(.system(size: 10).monospacedDigit()) }
+                }
+            }
+            .help("Queue")
+        }
+        .font(.system(size: 12))
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .glass(Capsule())
+        .fixedSize()
     }
 
     private var volume: some View {
@@ -136,6 +128,10 @@ struct NowPlayingView: View {
             Slider(value: Binding(get: { player.volume }, set: { player.setVolume($0) }), in: 0...player.maxVolume)
                 .controlSize(.mini)
         }
+        .frame(maxWidth: 120)
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .glass(Capsule())
         .help("Speaker volume: \(Int(player.volume))")
     }
 
