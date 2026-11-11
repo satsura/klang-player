@@ -7,6 +7,8 @@ final class LibraryWindow: NSObject, NSWindowDelegate {
     static let shared = LibraryWindow()
     private var window: NSWindow?
     private var keyMonitor: Any?
+    /// The window's tabs and back stacks (also opened from the popover).
+    let nav = BrowserState()
 
     var isVisible: Bool { window?.isVisible ?? false }
 
@@ -22,7 +24,7 @@ final class LibraryWindow: NSObject, NSWindowDelegate {
             w.contentMinSize = NSSize(width: 1000, height: 560)
             w.isReleasedWhenClosed = false
             w.delegate = self
-            let host = NSHostingController(rootView: LibraryWindowView())
+            let host = NSHostingController(rootView: LibraryWindowView(nav: nav))
             // SwiftUI's .toolbar, .searchable and .navigationTitle go to this window.
             host.sceneBridgingOptions = [.toolbars, .title]
             w.contentViewController = host
@@ -78,7 +80,7 @@ final class LibraryWindow: NSObject, NSWindowDelegate {
 struct LibraryWindowView: View {
     @ObservedObject private var player = Player.shared
     @AppStorage("appMode") private var mode = AppMode.both.rawValue
-    @StateObject private var nav = BrowserState()
+    @ObservedObject var nav: BrowserState
     @FocusState private var searchFocused: Bool
     @State private var pane: Pane = .queue
     @State private var coverAlbum: Album?

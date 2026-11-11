@@ -4,6 +4,7 @@ import SwiftUI
 struct RecentView: View {
     @ObservedObject var player = Player.shared
     @ObservedObject var lib = Library.shared
+    @Environment(\.wideBrowser) private var wide
     let open: (Route) -> Void
 
     var body: some View {
@@ -30,6 +31,17 @@ struct RecentView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 12)
+                if !wide {
+                    // The popover: the rest of the library opens in the window.
+                    SectionTitle("Library")
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                        ForEach([Tab.discover, .albums, .artists, .folders, .playlists], id: \.self) { t in
+                            LinkButton(title: t.title, icon: t.icon, external: true) { StatusBar.shared.openWindow(t) }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
+                }
             }
             .padding(.bottom, 6)
         }
@@ -141,6 +153,8 @@ struct LinkButton: View {
     let title: LocalizedStringKey
     let icon: String
     var tint: Color = .accentColor
+    /// Opens in the window: an arrow out instead of ›.
+    var external = false
     let action: () -> Void
     var body: some View {
         Button(action: action) {
@@ -148,7 +162,7 @@ struct LinkButton: View {
                 Image(systemName: icon).foregroundStyle(tint)
                 Text(title).font(.system(size: 12, weight: .medium))
                 Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(.tertiary)
+                Image(systemName: external ? "arrow.up.forward.app" : "chevron.right").font(.system(size: 10)).foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
             .card(RoundedRectangle(cornerRadius: 10, style: .continuous))

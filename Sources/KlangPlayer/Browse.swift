@@ -3,7 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var player = Player.shared
     @ObservedObject var lib = Library.shared
-    @StateObject private var nav = BrowserState()
+    @StateObject private var nav = BrowserState(fixed: .recent)
     @State private var overlay: Overlay?
     @FocusState private var searchFocused: Bool
     @FocusState private var rootFocused: Bool
@@ -94,9 +94,6 @@ struct ContentView: View {
                 speakerMenu
             }
             Spacer()
-            Button { StatusBar.shared.openWindow() } label: { Image(systemName: "macwindow").hitTarget() }
-                .buttonStyle(.borderless)
-                .tip("Open in Window")
             Button { NSApp.terminate(nil) } label: { Image(systemName: "power").hitTarget() }
                 .buttonStyle(.borderless)
                 .tip("Quit")

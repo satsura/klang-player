@@ -130,10 +130,11 @@ final class StatusBar: NSObject, NSPopoverDelegate {
 
     func showPopover() { if !popover.isShown { togglePopover() } }
 
-    /// Closes the popover and opens the large window.
-    func openWindow() {
+    /// Closes the popover and opens the large window (at a tab if given).
+    func openWindow(_ tab: Tab? = nil) {
         if popover.isShown { popover.performClose(nil) }
         Presence.showWindow()
+        if let tab { LibraryWindow.shared.nav.show(tab) }
     }
 
     @objc private func titleClicked(_ sender: NSStatusBarButton) {

@@ -86,8 +86,15 @@ enum Route: Hashable {
 /// Tab, back stacks and search of one browser (the popover and the large window each have one).
 @MainActor
 final class BrowserState: ObservableObject {
-    @Published var tab: Tab = Tab(rawValue: UserDefaults.standard.string(forKey: "tab") ?? "") ?? .recent {
-        didSet { UserDefaults.standard.set(tab.rawValue, forKey: "tab") }
+    @Published var tab: Tab {
+        didSet { if !fixed { UserDefaults.standard.set(tab.rawValue, forKey: "tab") } }
+    }
+    /// The popover stays on one page (Recent); the window has all tabs and remembers the last one.
+    private let fixed: Bool
+
+    init(fixed tab: Tab? = nil) {
+        self.fixed = tab != nil
+        self.tab = tab ?? Tab(rawValue: UserDefaults.standard.string(forKey: "tab") ?? "") ?? .recent
     }
     @Published var stacks: [Tab: [Route]] = [:]
     /// Where "forward" goes after going back (per tab, like a browser).
@@ -97,13 +104,13 @@ final class BrowserState: ObservableObject {
 
     func push(_ r: Route) {
         if !query.isEmpty {
-            // Opening something from search: show it in the matching tab.
-            switch r {
+            // Opening something from search: show it in the matching tab (the window).
+            if !fixed { switch r {
             case .album: tab = .albums
             case .artist: tab = .artists
             case .folder: tab = .folders
             default: break
-            }
+            } }
             query = ""
             searching = false
         }
@@ -137,6 +144,14 @@ final class BrowserState: ObservableObject {
         return false
     }
 
+    /// Opens a tab at its start, from outside (the popover's library links).
+    func show(_ t: Tab) {
+        query = ""
+        stacks[t] = []
+        forward[t] = []
+        tab = t
+    }
+
     /// Shows a tab from its start (a click on the current tab returns to its root).
     func select(_ t: Tab) {
         if t == tab { stacks[t] = []; forward[t] = [] }
@@ -168,25 +183,17 @@ struct BrowserView: View {
     }
 
     private var header: some View {
-        VStack(spacing: 8) {
-            if compact {
-                GlassGroup(spacing: 6) {
-                    HStack(spacing: 6) {
-                        TabBar(state: state)
-                        GlassIconButton(icon: state.searching ? "xmark" : "magnifyingglass",
-                                        label: "Search (⌘F)", size: 30, symbolSize: 12) {
-                            state.searching.toggle()
-                            if state.searching { searchFocused.wrappedValue = true } else { state.query = "" }
-                        }
-                    }
-                }
-            }
-            if !compact || state.searching || !state.query.isEmpty {
+        // The popover: search and the way to the full library (the window).
+        GlassGroup(spacing: 6) {
+            HStack(spacing: 6) {
                 SearchField(text: $state.query, focused: searchFocused)
+                GlassIconButton(icon: "books.vertical", label: "Open Library", size: 30, symbolSize: 12) {
+                    StatusBar.shared.openWindow()
+                }
             }
         }
         .padding(.horizontal, 12)
-        .padding(.top, compact ? 2 : 10)
+        .padding(.top, 2)
         .padding(.bottom, 8)
     }
 
@@ -221,44 +228,5 @@ struct BrowserView: View {
         case .stats: StatsView(back: state.pop) { state.push($0) }
         case .newArtist(let name): NewArtistView(name: name, back: state.pop)
         }
-    }
-}
-
-/// Icon tabs; the selected one also shows its name.
-struct TabBar: View {
-    @ObservedObject var state: BrowserState
-    @Namespace private var ns
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(Tab.popover) { t in
-                let on = state.tab == t
-                Button { withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { state.select(t) } } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: on ? t.selectedIcon : t.icon)
-                            .font(.system(size: 13, weight: .medium))
-                        if on { Text(t.title).font(.system(size: 11.5, weight: .semibold)).lineLimit(1).fixedSize() }
-                    }
-                    .foregroundStyle(on ? Color.primary : .secondary)
-                    .padding(.horizontal, on ? 10 : 0)
-                    .frame(maxWidth: on ? nil : .infinity, minHeight: 26)
-                    .background {
-                        if on {
-                            Capsule()
-                                .fill(Color.primary.opacity(0.1))
-                                .matchedGeometryEffect(id: "tab", in: ns)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(Text(t.title))
-                .accessibilityLabel(Text(t.title))
-                .accessibilityAddTraits(on ? .isSelected : [])
-            }
-        }
-        .padding(2)
-        .glass(Capsule())
     }
 }
